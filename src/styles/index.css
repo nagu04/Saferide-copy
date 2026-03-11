@@ -1,0 +1,120 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Global Cursor and Interaction Improvements */
+* {
+  cursor: default;
+}
+
+button, 
+a, 
+input[type="button"], 
+input[type="submit"], 
+input[type="reset"],
+label[for],
+select,
+[role="button"],
+[role="link"] {
+  cursor: pointer;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+input[type="date"],
+textarea {
+  cursor: text;
+}
+
+/* Smooth Link Transitions */
+a {
+  transition: all 0.2s ease;
+}
+
+/* Selection styling */
+::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: rgb(226, 232, 240);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(15 23 42);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(51 65 85);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(71 85 105);
+}
+
+/* Sonner Toast Customization */
+[data-sonner-toast] {
+  background-color: rgb(15 23 42) !important;
+  border: 1px solid rgb(51 65 85) !important;
+  color: rgb(226 232 240) !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+}
+
+[data-sonner-toast][data-type="success"] {
+  background-color: rgb(15 23 42) !important;
+  border-color: rgb(34 197 94 / 0.3) !important;
+}
+
+[data-sonner-toast][data-type="error"] {
+  background-color: rgb(15 23 42) !important;
+  border-color: rgb(239 68 68 / 0.3) !important;
+}
+
+[data-sonner-toast][data-type="warning"] {
+  background-color: rgb(15 23 42) !important;
+  border-color: rgb(234 179 8 / 0.3) !important;
+}
+
+[data-sonner-toast][data-type="info"] {
+  background-color: rgb(15 23 42) !important;
+  border-color: rgb(59 130 246 / 0.3) !important;
+}
+
+[data-sonner-toast] [data-title] {
+  color: rgb(226 232 240) !important;
+  font-weight: 600 !important;
+}
+
+[data-sonner-toast] [data-description] {
+  color: rgb(148 163 184) !important;
+}
+
+[data-sonner-toast] [data-button] {
+  background-color: rgb(30 41 59) !important;
+  color: rgb(226 232 240) !important;
+  border: 1px solid rgb(51 65 85) !important;
+}
+
+[data-sonner-toast] [data-button]:hover {
+  background-color: rgb(51 65 85) !important;
+}
+
+[data-sonner-toast] [data-close-button] {
+  background-color: transparent !important;
+  border: 1px solid rgb(51 65 85) !important;
+  color: rgb(148 163 184) !important;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background-color: rgb(30 41 59) !important;
+  color: rgb(226 232 240) !important;
+}
