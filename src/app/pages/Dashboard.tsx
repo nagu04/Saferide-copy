@@ -9,7 +9,6 @@ import { api } from '@/app/services/api';
 import { useWebSocket } from '@/app/services/websocket';
 import { showToast } from '@/app/utils/toast';
 import type { DashboardStats, ViolationTrendData, Violation, WebSocketMessage } from '@/app/types';
-import { CanvasLiveFeed } from '../pages/CanvasLiveFeed';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -27,15 +26,13 @@ export function Dashboard() {
   const { isConnected } = useWebSocket((message: WebSocketMessage) => {
     if (message.type === 'new_violation') {
       setRecentViolations(prev => [message.data, ...prev.slice(0, 9)]);
-      const violation = message.data;
       showToast.violationAlert(
-        violation.violation_type,
-        violation.location,
-        violation.plate_number
+        message.data.violation_type,
+        message.data.location,
+        message.data.plate_number
       );
       loadStats();
     }
-
     if (message.type === 'system_status') {
       const status = message.data.status as 'online' | 'offline' | 'maintenance';
       showToast.systemStatus(status, message.data.message);
@@ -57,12 +54,10 @@ export function Dashboard() {
     try { setStats(await api.dashboard.getStats()); } 
     catch (e) { console.error(e); }
   };
-
   const loadTrends = async () => {
     try { setTrendData(await api.dashboard.getTrends(6)); } 
     catch (e) { console.error(e); }
   };
-
   const loadRecentViolations = async () => {
     try { setRecentViolations(await api.dashboard.getRecentViolations(10)); } 
     catch (e) { console.error(e); }
@@ -75,13 +70,11 @@ export function Dashboard() {
     overload: item.overload_count,
   }));
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-slate-400">Loading dashboard...</div>
-      </div>
-    );
-  }
+  if (isLoading) return (
+    <div className="flex items-center justify-center h-96">
+      <div className="text-slate-400">Loading dashboard...</div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -223,24 +216,54 @@ function StatsCard({ title, value, trend, trendUp, subtitle, icon: Icon, color, 
   );
 }
 
-
+// --- LiveFeed Component ---
 function LiveFeed() {
+  const [hasError, setHasError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (hasError) {
+      timer = setTimeout(() => {
+        setHasError(false);
+        setRetryCount(prev => prev + 1);
+      }, 3000);
+    }
+    return () => clearTimeout(timer);
+  }, [hasError]);
+
   return (
     <div className="w-full h-full relative bg-black flex items-center justify-center border border-slate-800/50">
-      <img
-        src="http://localhost:8000/camera-feed/CAM-001"
-        alt="Live Feed"
-        className="w-full h-full object-cover"
-      />
-      <div className="absolute inset-0 p-4 flex flex-col justify-between pointer-events-none">
-        <div className="flex justify-between items-start">
-          <div className="bg-black/70 px-2 py-1 rounded text-slate-500 font-mono text-xs border border-slate-700/50">● LIVE</div>
-          <div className="text-right">
-            <div className="text-slate-500 font-mono text-xs">YOLOv11 Inference</div>
-            <div className="text-slate-600 font-mono text-[10px]">Lat: -- | Conf: --</div>
+      {!hasError ? (
+        <img
+          key={retryCount}
+          src={`http://127.0.0.1:8000/camera-feed/CAM-001`} // Backend must serve MJPEG/stream
+          alt="Live Feed"
+          className="w-full h-full object-cover"
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-yellow-500 animate-ping" />
+            <p className="text-slate-400 text-sm font-medium">Attempting to reconnect...</p>
           </div>
+          <CameraOff className="w-8 h-8 text-slate-700" />
+          <button 
+            onClick={() => { setHasError(false); setRetryCount(prev => prev + 1); }}
+            className="px-3 py-1 bg-blue-600/20 text-blue-400 rounded-md text-xs hover:bg-blue-600/30 transition-colors"
+          >
+            Manual Retry
+          </button>
         </div>
-      </div>
+      )}
+      {!hasError && (
+        <div className="absolute top-4 right-4 flex gap-2">
+           <span className="bg-black/60 backdrop-blur-md text-[10px] text-green-400 px-2 py-1 rounded border border-green-500/30">
+             CONNECTED
+           </span>
+        </div>
+      )}
     </div>
   );
 }

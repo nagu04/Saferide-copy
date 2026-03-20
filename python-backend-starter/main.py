@@ -21,12 +21,19 @@ import jwt
 from passlib.context import CryptContext
 import cv2
 from fastapi.responses import StreamingResponse
+from typing import Dict
+import threading
+import os
+import subprocess
+import signal
+import numpy as np
 
 # ==================== Configuration ====================
 
 SECRET_KEY = "your-secret-key-change-this-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
+FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ffmpeg", "bin", "ffmpeg.exe"))
 
 # ==================== FastAPI App ====================
 
@@ -169,9 +176,70 @@ MOCK_VIOLATIONS = [
     }
 ]
 
-CAMERA_CAPTURES = {}
+#CAMERA_CAPTURES: Dict[str, cv2.VideoCapture] = {}
 
 # ==================== Helper Functions ====================
+#import subprocess
+#import asyncio
+
+
+
+
+
+class FFMpegCameraStream:
+    def __init__(self, rtsp_url, width=640, height=480, fps=20):
+        self.rtsp_url = rtsp_url
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.process = None
+
+    def start(self):
+        if self.process is None:
+            print(f"[INFO] Starting FFmpeg stream for {self.rtsp_url}")
+            # Run FFmpeg to output raw video frames in BGR24
+            self.process = subprocess.Popen(
+                [
+                    FFMPEG_PATH,
+                    "-rtsp_transport", "tcp",  # use TCP for RTSP
+                    "-i", self.rtsp_url,
+                    "-f", "rawvideo",
+                    "-pix_fmt", "bgr24",
+                    "-s", f"{self.width}x{self.height}",
+                    "-"
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=10**8
+            )
+
+    def get_frame(self):
+        """Return a JPEG-encoded frame"""
+        if self.process is None:
+            self.start()
+        try:
+            raw_size = self.width * self.height * 3
+            raw_frame = self.process.stdout.read(raw_size)
+            if not raw_frame:
+                return None
+            frame = np.frombuffer(raw_frame, np.uint8).reshape((self.height, self.width, 3))
+            ret, jpeg = cv2.imencode(".jpg", frame)
+            if not ret:
+                return None
+            return jpeg.tobytes()
+        except Exception as e:
+            print(f"[ERROR] FFmpeg read failed: {e}")
+            self.stop()
+            return None
+
+    def stop(self):
+        if self.process:
+            print(f"[INFO] Stopping FFmpeg stream for {self.rtsp_url}")
+            self.process.terminate()
+            self.process.wait()
+            self.process = None
+
+CAMERA_STREAMS: Dict[str, FFMpegCameraStream] = {}
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
@@ -197,44 +265,59 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         raise HTTPException(status_code=404, detail="User not found")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    
-def get_camera_capture(camera_id: str):
-    if camera_id in CAMERA_CAPTURES:
-        return CAMERA_CAPTURES[camera_id]
 
-    rtsp_urls = {
-        "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream1",
-        # add more cameras if needed
-    }
+RTSP_URLS = {
+    "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream1",
+}
 
-    if camera_id not in rtsp_urls:
-        raise RuntimeError(f"No RTSP URL configured for {camera_id}")
+def shutdown_handler(*args):
+    print("[INFO] Shutting down camera streams...")
+    for stream in CAMERA_STREAMS.values():
+        stream.stop()
+    print("[INFO] Done.")
+    exit(0)
 
-    cap = cv2.VideoCapture(rtsp_urls[camera_id])
-    CAMERA_CAPTURES[camera_id] = cap
-    return cap
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
+
+
+def get_camera_stream(camera_id: str):
+    if camera_id not in RTSP_URLS:
+        raise HTTPException(status_code=404, detail=f"Unknown camera ID: {camera_id}")
+
+    if camera_id not in CAMERA_STREAMS:
+        CAMERA_STREAMS[camera_id] = FFMpegCameraStream(RTSP_URLS[camera_id])
+
+    return CAMERA_STREAMS[camera_id]
 
 def gen_frames(camera_id: str):
-    """
-    Generator function that yields MJPEG frames from the camera
-    """
-    cap = get_camera_capture(camera_id)
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open camera {camera_id}")
+    if camera_id not in RTSP_URLS:
+        raise HTTPException(status_code=404, detail=f"Unknown camera ID: {camera_id}")
+
+    if camera_id not in CAMERA_STREAMS:
+        CAMERA_STREAMS[camera_id] = FFMpegCameraStream(RTSP_URLS[camera_id])
+
+    stream = CAMERA_STREAMS[camera_id]
+    stream.start()
+    failure_count = 0
 
     while True:
-        success, frame = cap.read()
-        if not success:
-            break
+        frame = stream.get_frame()
+        if frame is None:
+            failure_count += 1
+            print(f"[WARN] Failed to read frame from {camera_id} ({failure_count})")
+            if failure_count >= 5:
+                print(f"[INFO] Restarting FFmpeg stream for {camera_id}")
+                stream.stop()
+                time.sleep(2)
+                stream.start()
+                failure_count = 0
+            time.sleep(0.1)
+            continue
 
-        # Encode frame as JPEG
-        ret, buffer = cv2.imencode(".jpg", frame)
-        frame_bytes = buffer.tobytes()
-
-        # Yield as multipart for MJPEG
+        failure_count = 0
         yield (b"--frame\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
-
+               b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
 # ==================== Authentication Endpoints ====================
 
 @app.post("/api/auth/login", response_model=LoginResponse)
@@ -350,16 +433,10 @@ async def review_violation(
 
 @app.get("/camera-feed/{camera_id}")
 async def camera_feed(camera_id: str):
-    """
-    MJPEG stream endpoint for a given camera
-    """
-    try:
-        return StreamingResponse(
-            gen_frames(camera_id),
-            media_type="multipart/x-mixed-replace; boundary=frame"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(
+        gen_frames(camera_id),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
