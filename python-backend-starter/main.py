@@ -19,6 +19,8 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import jwt
 from passlib.context import CryptContext
+import cv2
+from fastapi.responses import StreamingResponse
 
 # ==================== Configuration ====================
 
@@ -167,6 +169,8 @@ MOCK_VIOLATIONS = [
     }
 ]
 
+CAMERA_CAPTURES = {}
+
 # ==================== Helper Functions ====================
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -193,6 +197,43 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         raise HTTPException(status_code=404, detail="User not found")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+    
+def get_camera_capture(camera_id: str):
+    if camera_id in CAMERA_CAPTURES:
+        return CAMERA_CAPTURES[camera_id]
+
+    rtsp_urls = {
+        "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream1",
+        # add more cameras if needed
+    }
+
+    if camera_id not in rtsp_urls:
+        raise RuntimeError(f"No RTSP URL configured for {camera_id}")
+
+    cap = cv2.VideoCapture(rtsp_urls[camera_id])
+    CAMERA_CAPTURES[camera_id] = cap
+    return cap
+
+def gen_frames(camera_id: str):
+    """
+    Generator function that yields MJPEG frames from the camera
+    """
+    cap = get_camera_capture(camera_id)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open camera {camera_id}")
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        # Encode frame as JPEG
+        ret, buffer = cv2.imencode(".jpg", frame)
+        frame_bytes = buffer.tobytes()
+
+        # Yield as multipart for MJPEG
+        yield (b"--frame\r\n"
+               b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
 
 # ==================== Authentication Endpoints ====================
 
@@ -306,6 +347,19 @@ async def review_violation(
     raise HTTPException(status_code=404, detail="Violation not found")
 
 # ==================== Dashboard Endpoints ====================
+
+@app.get("/camera-feed/{camera_id}")
+async def camera_feed(camera_id: str):
+    """
+    MJPEG stream endpoint for a given camera
+    """
+    try:
+        return StreamingResponse(
+            gen_frames(camera_id),
+            media_type="multipart/x-mixed-replace; boundary=frame"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
