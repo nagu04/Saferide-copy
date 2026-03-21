@@ -35,6 +35,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ffmpeg", "bin", "ffmpeg.exe"))
 
+
 # ==================== FastAPI App ====================
 
 app = FastAPI(title="SafeRide API", version="1.0.0")
@@ -182,62 +183,82 @@ MOCK_VIOLATIONS = [
 #import subprocess
 #import asyncio
 
-
-
-
-
 class FFMpegCameraStream:
-    def __init__(self, rtsp_url, width=640, height=480, fps=20):
-        self.rtsp_url = rtsp_url
+    def __init__(self, url: str, FFMPEG_PATH: str = None, width=1280, height=720):
+        self.url = url
+        self.latest_frame = None
+        self.running = False
+        self.process = None
+        self.lock = threading.Lock()
         self.width = width
         self.height = height
-        self.fps = fps
-        self.process = None
+
+        # Use provided path or fallback to "ffmpeg" in PATH
+        if FFMPEG_PATH:
+            self.FFMPEG_PATH = FFMPEG_PATH
+        else:
+            self.FFMPEG_PATH = "ffmpeg"
 
     def start(self):
-        if self.process is None:
-            print(f"[INFO] Starting FFmpeg stream for {self.rtsp_url}")
-            # Run FFmpeg to output raw video frames in BGR24
-            self.process = subprocess.Popen(
-                [
-                    FFMPEG_PATH,
-                    "-rtsp_transport", "tcp",  # use TCP for RTSP
-                    "-i", self.rtsp_url,
-                    "-f", "rawvideo",
-                    "-pix_fmt", "bgr24",
-                    "-s", f"{self.width}x{self.height}",
-                    "-"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                bufsize=10**8
-            )
+        if self.running:
+            return
+        self.running = True
+        threading.Thread(target=self._update_frames, daemon=True).start()
 
-    def get_frame(self):
-        """Return a JPEG-encoded frame"""
-        if self.process is None:
-            self.start()
+    def _update_frames(self):
+        """
+        Run FFmpeg in a subprocess and continuously read frames
+        """
+        cmd = [
+            self.FFMPEG_PATH,
+            "-rtsp_transport", "tcp",       # low-latency TCP
+            "-i", self.url,
+            "-f", "image2pipe",
+            "-pix_fmt", "bgr24",
+            "-vcodec", "rawvideo",
+            "-"
+        ]
+
         try:
-            raw_size = self.width * self.height * 3
-            raw_frame = self.process.stdout.read(raw_size)
+            self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=10**8)
+        except FileNotFoundError:
+            print(f"FFmpeg not found at '{self.FFMPEG_PATH}'. Please check the path.")
+            self.running = False
+            return
+
+        while self.running:
+            raw_frame = self.process.stdout.read(self.width * self.height * 3)
             if not raw_frame:
-                return None
+                continue
             frame = np.frombuffer(raw_frame, np.uint8).reshape((self.height, self.width, 3))
+
+            # Optional: reduce resolution to improve FPS
+            # frame = cv2.resize(frame, (640, 360))
+
+            # encode as JPEG for browser
             ret, jpeg = cv2.imencode(".jpg", frame)
             if not ret:
-                return None
-            return jpeg.tobytes()
-        except Exception as e:
-            print(f"[ERROR] FFmpeg read failed: {e}")
-            self.stop()
-            return None
+                continue
+
+            with self.lock:
+                self.latest_frame = jpeg.tobytes()
+
+        # Clean up process
+        if self.process:
+            self.process.terminate()
+            self.process = None
+
+    def read_frame(self):
+        """
+        Return the latest JPEG frame
+        """
+        self.start()
+        with self.lock:
+            return self.latest_frame
 
     def stop(self):
-        if self.process:
-            print(f"[INFO] Stopping FFmpeg stream for {self.rtsp_url}")
-            self.process.terminate()
-            self.process.wait()
-            self.process = None
+        self.running = False
+
 
 CAMERA_STREAMS: Dict[str, FFMpegCameraStream] = {}
 
@@ -267,7 +288,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 RTSP_URLS = {
-    "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream1",
+    "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream2",
 }
 
 def shutdown_handler(*args):
@@ -290,34 +311,16 @@ def get_camera_stream(camera_id: str):
 
     return CAMERA_STREAMS[camera_id]
 
-def gen_frames(camera_id: str):
-    if camera_id not in RTSP_URLS:
-        raise HTTPException(status_code=404, detail=f"Unknown camera ID: {camera_id}")
-
-    if camera_id not in CAMERA_STREAMS:
-        CAMERA_STREAMS[camera_id] = FFMpegCameraStream(RTSP_URLS[camera_id])
-
-    stream = CAMERA_STREAMS[camera_id]
-    stream.start()
-    failure_count = 0
-
+def gen_frames(stream: FFMpegCameraStream):
     while True:
-        frame = stream.get_frame()
-        if frame is None:
-            failure_count += 1
-            print(f"[WARN] Failed to read frame from {camera_id} ({failure_count})")
-            if failure_count >= 5:
-                print(f"[INFO] Restarting FFmpeg stream for {camera_id}")
-                stream.stop()
-                time.sleep(2)
-                stream.start()
-                failure_count = 0
-            time.sleep(0.1)
-            continue
-
-        failure_count = 0
-        yield (b"--frame\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+        frame = stream.read_frame()
+        if frame:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        else:
+            # no frame yet, wait a tiny bit
+            import time
+            time.sleep(0.01)
 # ==================== Authentication Endpoints ====================
 
 @app.post("/api/auth/login", response_model=LoginResponse)
@@ -431,12 +434,15 @@ async def review_violation(
 
 # ==================== Dashboard Endpoints ====================
 
-@app.get("/camera-feed/{camera_id}")
-async def camera_feed(camera_id: str):
-    return StreamingResponse(
-        gen_frames(camera_id),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
+from fastapi import FastAPI
+
+app = FastAPI()
+camera_stream = FFMpegCameraStream("rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream2", FFMPEG_PATH=FFMPEG_PATH)
+
+@app.get("/camera-feed/CAM-001")
+def camera_feed():
+    return StreamingResponse(gen_frames(camera_stream),
+                             media_type='multipart/x-mixed-replace; boundary=frame')
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
