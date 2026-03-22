@@ -436,12 +436,12 @@ async def review_violation(
 
 from fastapi import FastAPI
 
-app = FastAPI()
 camera_stream = FFMpegCameraStream("rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream2", FFMPEG_PATH=FFMPEG_PATH)
 
-@app.get("/camera-feed/CAM-001")
-def camera_feed():
-    return StreamingResponse(gen_frames(camera_stream),
+@app.get("/camera-feed/{camera_id}")
+def camera_feed(camera_id: str):
+    stream = get_camera_stream(camera_id)
+    return StreamingResponse(gen_frames(stream),
                              media_type='multipart/x-mixed-replace; boundary=frame')
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
