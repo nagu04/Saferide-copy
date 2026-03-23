@@ -250,10 +250,12 @@ def gen_frames(stream: FFMpegCameraStream):
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @app.get("/camera-feed/{camera_id}")
-def camera_feed(camera_id: str, current_user: User = Depends(get_current_user)):
+def camera_feed(camera_id: str):
     stream = get_camera_stream(camera_id)
-    return StreamingResponse(gen_frames(stream),
-                             media_type='multipart/x-mixed-replace; boundary=frame')
+    return StreamingResponse(
+        gen_frames(stream),
+        media_type='multipart/x-mixed-replace; boundary=frame'
+    )
 
 @app.get("/api/cameras", response_model=List[Camera])
 async def get_cameras(current_user: User = Depends(get_current_user)):
