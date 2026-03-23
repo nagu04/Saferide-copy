@@ -1,11 +1,15 @@
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import jwt
 from passlib.context import CryptContext
+import cv2
+import threading
+import queue
 
 # ==================== Configuration ====================
 
@@ -13,13 +17,18 @@ SECRET_KEY = "your-secret-key-change-this-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
+# RTSP URLs for your cameras
+RTSP_URLS = {
+    "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream2",
+}
+
 # ==================== FastAPI App ====================
 
 app = FastAPI(title="SafeRide API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all for now (Render + React)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,6 +82,11 @@ class DashboardStats(BaseModel):
     total_cameras: int
     average_confidence: float
 
+class Camera(BaseModel):
+    id: str
+    name: str
+    location: str
+
 # ==================== Mock Database ====================
 
 MOCK_USER = {
@@ -87,6 +101,10 @@ MOCK_USER = {
 }
 
 MOCK_VIOLATIONS = []
+
+MOCK_CAMERAS = [
+    {"id": "CAM-001", "name": "Main Gate", "location": "Sucat Main Gate"},
+]
 
 # ==================== Helper Functions ====================
 
@@ -116,66 +134,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
 async def login(credentials: LoginRequest):
     if credentials.username != MOCK_USER["username"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-
     if not verify_password(credentials.password, MOCK_USER["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-
     access_token = create_access_token(data={"sub": MOCK_USER["id"]})
     user = User(**{k: v for k, v in MOCK_USER.items() if k != "password_hash"})
+    return LoginResponse(access_token=access_token, token_type="bearer", user=user)
 
-    return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=user
-    )
-
-# ==================== Violations ====================
-
-@app.get("/api/violations")
-async def get_violations(current_user: User = Depends(get_current_user)):
-    return {"violations": MOCK_VIOLATIONS}
-
-@app.post("/api/detections")
-async def receive_detection(data: dict):
-    """
-    This endpoint will be called by your PC YOLO detection script
-    """
-    violation = {
-        "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-        "timestamp": datetime.now().isoformat(),
-        "location": data.get("location", "Unknown"),
-        "camera_id": data.get("camera_id"),
-        "detections": data.get("detections"),
-        "status": "pending"
-    }
-
-    MOCK_VIOLATIONS.insert(0, violation)
-
-    await manager.broadcast({
-        "type": "new_violation",
-        "data": violation
-    })
-
-    return {"status": "received"}
-
-# ==================== Dashboard ====================
-
-@app.get("/api/dashboard/stats", response_model=DashboardStats)
-async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
-    return DashboardStats(
-        total_violations_today=len(MOCK_VIOLATIONS),
-        helmet_violations=10,
-        plate_violations=5,
-        overloading_violations=3,
-        pending_review_count=4,
-        approved_count=6,
-        rejected_count=1,
-        active_cameras=1,
-        total_cameras=1,
-        average_confidence=0.92
-    )
-
-# ==================== WebSocket ====================
+# ==================== WebSocket Manager ====================
 
 class ConnectionManager:
     def __init__(self):
@@ -202,6 +167,97 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+# ==================== Violations ====================
+
+@app.get("/api/violations")
+async def get_violations(current_user: User = Depends(get_current_user)):
+    return {"violations": MOCK_VIOLATIONS}
+
+@app.post("/api/detections")
+async def receive_detection(data: dict):
+    violation = {
+        "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "timestamp": datetime.now().isoformat(),
+        "location": data.get("location", "Unknown"),
+        "camera_id": data.get("camera_id"),
+        "detections": data.get("detections"),
+        "status": "pending"
+    }
+    MOCK_VIOLATIONS.insert(0, violation)
+    await manager.broadcast({"type": "new_violation", "data": violation})
+    return {"status": "received"}
+
+# ==================== Dashboard ====================
+
+@app.get("/api/dashboard/stats", response_model=DashboardStats)
+async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
+    return DashboardStats(
+        total_violations_today=len(MOCK_VIOLATIONS),
+        helmet_violations=10,
+        plate_violations=5,
+        overloading_violations=3,
+        pending_review_count=4,
+        approved_count=6,
+        rejected_count=1,
+        active_cameras=len(MOCK_CAMERAS),
+        total_cameras=len(MOCK_CAMERAS),
+        average_confidence=0.92
+    )
+
+# ==================== Camera RTSP Streaming ====================
+
+camera_streams: Dict[str, "FFMpegCameraStream"] = {}
+
+class FFMpegCameraStream:
+    def __init__(self, url: str):
+        self.url = url
+        self.cap = cv2.VideoCapture(url)
+        self.frame_queue = queue.Queue(maxsize=10)
+        self.thread = threading.Thread(target=self.update_frames, daemon=True)
+        self.thread.start()
+
+    def update_frames(self):
+        while True:
+            ret, frame = self.cap.read()
+            if not ret:
+                continue
+            # Encode frame as JPEG
+            ret, buffer = cv2.imencode('.jpg', frame)
+            if ret:
+                if self.frame_queue.full():
+                    self.frame_queue.get()
+                self.frame_queue.put(buffer.tobytes())
+
+    def get_frame(self):
+        try:
+            return self.frame_queue.get(timeout=2)
+        except queue.Empty:
+            return None
+
+def get_camera_stream(camera_id: str) -> FFMpegCameraStream:
+    if camera_id not in RTSP_URLS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    if camera_id not in camera_streams:
+        camera_streams[camera_id] = FFMpegCameraStream(RTSP_URLS[camera_id])
+    return camera_streams[camera_id]
+
+def gen_frames(stream: FFMpegCameraStream):
+    while True:
+        frame = stream.get_frame()
+        if frame:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+@app.get("/camera-feed/{camera_id}")
+def camera_feed(camera_id: str, current_user: User = Depends(get_current_user)):
+    stream = get_camera_stream(camera_id)
+    return StreamingResponse(gen_frames(stream),
+                             media_type='multipart/x-mixed-replace; boundary=frame')
+
+@app.get("/api/cameras", response_model=List[Camera])
+async def get_cameras(current_user: User = Depends(get_current_user)):
+    return MOCK_CAMERAS
 
 # ==================== Health ====================
 

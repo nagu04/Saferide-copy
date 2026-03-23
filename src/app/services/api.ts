@@ -452,6 +452,8 @@ export const cameraAPI = {
   },
 };
 
+
+
 // Export all APIs as a single object
 export const api = {
   auth: authAPI,
