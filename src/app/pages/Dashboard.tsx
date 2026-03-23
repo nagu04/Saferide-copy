@@ -237,7 +237,8 @@ function LiveFeed() {
       {!hasError ? (
         <img
           key={retryCount}
-          src={`http://127.0.0.1:8000/camera-feed/CAM-001`} // Backend must serve MJPEG/stream
+          src="https://saferide-l724.onrender.com/camera-feed/CAM-001" // Backend must serve MJPEG/stream
+          style={{ width: "100%", borderRadius: "10px" }}
           alt="Live Feed"
           className="w-full h-full object-cover"
           onError={() => setHasError(true)}

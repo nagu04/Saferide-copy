@@ -19,7 +19,7 @@ ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 # RTSP URLs for your cameras
 RTSP_URLS = {
-    "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@112.207.185.219:8554/stream2",
+    "CAM-001": "rtsp://cpe25detection:coponluceshofilena123@192.168.1.23:554/stream2",
 }
 
 # ==================== FastAPI App ====================
