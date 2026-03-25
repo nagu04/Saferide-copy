@@ -172,37 +172,76 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/violations")
 async def get_violations(current_user: User = Depends(get_current_user)):
-    return {"violations": MOCK_VIOLATIONS}
+    # Return violations in the same structure your frontend expects
+    return {
+        "violations": MOCK_VIOLATIONS
+    }
 
 @app.post("/api/detections")
 async def receive_detection(data: dict):
+    # Convert incoming detections to ViolationDetection format
+    detections_list = []
+    for det in data.get("detections", []):
+        detections_list.append({
+            "type": det.get("type"),
+            "confidence": det.get("confidence"),
+            # Keep bounding_box None (not provided by mock)
+            "bounding_box": None,
+            # Include image_url and plate_number for frontend
+            "image_url": det.get("image_url"),
+            "plate_number": det.get("plate_number")
+        })
+    
     violation = {
-        "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",  # add microseconds to avoid duplicates
         "timestamp": datetime.now().isoformat(),
         "location": data.get("location", "Unknown"),
         "camera_id": data.get("camera_id"),
-        "detections": data.get("detections"),
+        "detections": detections_list,
         "status": "pending"
     }
+    
+    # Insert newest violation at the top
     MOCK_VIOLATIONS.insert(0, violation)
+    
+    # Broadcast to all connected websocket clients
     await manager.broadcast({"type": "new_violation", "data": violation})
-    return {"status": "received"}
+    
+    return {"status": "received", "violation": violation}
 
 # ==================== Dashboard ====================
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
+    # Count violations by type dynamically
+    helmet_count = sum(
+        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "no_helmet"
+    )
+    plate_count = sum(
+        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d.get("plate_number")
+    )
+    overloading_count = sum(
+        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "overloading"
+    )
+    approved_count = sum(1 for v in MOCK_VIOLATIONS if v.get("status") == "approved")
+    rejected_count = sum(1 for v in MOCK_VIOLATIONS if v.get("status") == "rejected")
+    pending_count = sum(1 for v in MOCK_VIOLATIONS if v.get("status") == "pending")
+    avg_conf = (
+        sum(d["confidence"] for v in MOCK_VIOLATIONS for d in v["detections"]) /
+        max(1, sum(len(v["detections"]) for v in MOCK_VIOLATIONS))
+    )
+    
     return DashboardStats(
         total_violations_today=len(MOCK_VIOLATIONS),
-        helmet_violations=10,
-        plate_violations=5,
-        overloading_violations=3,
-        pending_review_count=4,
-        approved_count=6,
-        rejected_count=1,
+        helmet_violations=helmet_count,
+        plate_violations=plate_count,
+        overloading_violations=overloading_count,
+        pending_review_count=pending_count,
+        approved_count=approved_count,
+        rejected_count=rejected_count,
         active_cameras=len(MOCK_CAMERAS),
         total_cameras=len(MOCK_CAMERAS),
-        average_confidence=0.92
+        average_confidence=round(avg_conf, 2)
     )
 
 # ==================== Camera RTSP Streaming ====================
