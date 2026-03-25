@@ -252,7 +252,7 @@ async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
         average_confidence=round(avg_conf, 2)
     )
 
-@app.get("/api/dashboard/recent-violations")
+@app.get("/api/dashboard/recent")
 async def get_recent_violations(limit: int = 10, current_user: User = Depends(get_current_user)):
     return MOCK_VIOLATIONS[:limit]
 # ==================== Camera RTSP Streaming ====================
