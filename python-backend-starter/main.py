@@ -193,11 +193,19 @@ async def receive_detection(data: dict):
         })
     
     violation = {
-        "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",  # add microseconds to avoid duplicates
+        "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
         "timestamp": datetime.now().isoformat(),
         "location": data.get("location", "Unknown"),
         "camera_id": data.get("camera_id"),
-        "detections": detections_list,
+        "detections": [
+            {
+                "type": det.get("type"),
+                "confidence": det.get("confidence"),
+                "image_url": det.get("image_url"),
+                "plate_number": det.get("plate_number"),
+                "bounding_box": None
+            } for det in data.get("detections", [])
+        ],
         "status": "pending"
     }
     
@@ -244,6 +252,9 @@ async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
         average_confidence=round(avg_conf, 2)
     )
 
+@app.get("/api/dashboard/recent-violations")
+async def get_recent_violations(limit: int = 10, current_user: User = Depends(get_current_user)):
+    return MOCK_VIOLATIONS[:limit]
 # ==================== Camera RTSP Streaming ====================
 
 camera_streams: Dict[str, "FFMpegCameraStream"] = {}

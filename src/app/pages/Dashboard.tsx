@@ -25,11 +25,13 @@ export function Dashboard() {
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket((message: WebSocketMessage) => {
     if (message.type === 'new_violation') {
-      setRecentViolations(prev => [message.data, ...prev.slice(0, 9)]);
+      const newViolation = message.data as Violation;
+      setRecentViolations(prev => [newViolation, ...prev.slice(0, 9)]);
+
       showToast.violationAlert(
-        message.data.violation_type,
-        message.data.location,
-        message.data.plate_number
+        newViolation.detections[0]?.type || 'Unknown',
+        newViolation.location,
+        newViolation.detections[0]?.plate_number || ''
       );
       loadStats();
     }
@@ -59,8 +61,11 @@ export function Dashboard() {
     catch (e) { console.error(e); }
   };
   const loadRecentViolations = async () => {
-    try { setRecentViolations(await api.dashboard.getRecentViolations(10)); } 
-    catch (e) { console.error(e); }
+    try {
+      setRecentViolations(await api.dashboard.getRecentViolations(10)); 
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const chartData = trendData.map(item => ({
