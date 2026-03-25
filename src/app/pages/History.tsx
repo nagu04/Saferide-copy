@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { showToast } from '@/app/utils/toast';
 import api from '@/app/services/api';
-import { useWebSocket } from '@/app/websocket';
+import { useWebSocket } from '@/app/services/websocket';
 
 export function History() {
   const navigate = useNavigate();
