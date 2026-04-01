@@ -4,6 +4,7 @@ import { ArrowLeft, MapPin, Calendar, Clock, Sun, ShieldCheck, ShieldAlert, Help
 import { showToast } from '@/app/utils/toast';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { ImageViewer, ImageViewerImage } from '@/app/components/ImageViewer';
+import { useWebSocket } from '@/app/services/websocket';
 
 export function IncidentDetail() {
   const { id } = useParams();
@@ -30,6 +31,21 @@ export function IncidentDetail() {
       })
       .catch(err => console.error(err));
   }, [id]);
+
+  useWebSocket((message) => {
+    if (message.type === 'update_violation' && message.data.id === id) {
+      const updatedIncident = message.data;
+      setIncident(prev => ({ ...prev, ...updatedIncident }));
+      setStatus(updatedIncident.status ? updatedIncident.status.charAt(0).toUpperCase() + updatedIncident.status.slice(1) : 'Pending');
+      if (updatedIncident.reviewerNote) setReviewerNote(updatedIncident.reviewerNote);
+
+      showToast.info(
+        'Incident Updated',
+        `Incident ${updatedIncident.id} status changed to ${updatedIncident.status || 'Pending'}`
+      );
+    }
+  }, true);
+  
 
   // Evidence images data
   const evidenceImages: ImageViewerImage[] =

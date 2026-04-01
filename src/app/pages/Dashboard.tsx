@@ -29,20 +29,27 @@ export function Dashboard() {
       const newViolation = message.data as Violation;
 
       // 1. Update the list of recent violations
-      setRecentViolations(prev => [newViolation, ...prev.slice(0, 9)]);
+      setRecentViolations(prev => [newViolation, ...prev.slice(0, 19)]); // keeps top 20
 
-      // 2. Show toast notification
+      // 2. Show toast notification (clickable to navigate)
       showToast.violationAlert(
         newViolation.detections[0]?.type || 'Unknown',
         newViolation.location,
-        newViolation.detections[0]?.plate_number || ''
+        newViolation.detections[0]?.plate_number || '',
+        () => navigate(`/incidents/${newViolation.id}`) // navigate on click
       );
 
-      // 3. Navigate to the violation detail page
-      navigate(`/incidents/${newViolation.id}`);
+      // 3. Do NOT auto-navigate immediately (removed)
+      // navigate(`/incidents/${newViolation.id}`);
 
       // 4. Refresh stats if needed
       loadStats();
+    }
+    if (message.type === 'update_violation') {
+      const updated = message.data as Violation;
+      setRecentViolations(prev =>
+        prev.map(v => (v.id === updated.id ? { ...v, ...updated } : v))
+      );
     }
 
     if (message.type === 'system_status') {
