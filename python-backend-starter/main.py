@@ -177,6 +177,13 @@ async def get_violations(current_user: User = Depends(get_current_user)):
         "violations": MOCK_VIOLATIONS
     }
 
+@app.get("/api/violations/{violation_id}")
+async def get_violation_by_id(violation_id: str):
+    for v in MOCK_VIOLATIONS:
+        if v["id"] == violation_id:
+            return v
+    raise HTTPException(status_code=404, detail="Violation not found")
+
 @app.post("/api/detections")
 async def receive_detection(data: dict):
     # Convert incoming detections to ViolationDetection format
@@ -194,9 +201,10 @@ async def receive_detection(data: dict):
     
     violation = {
         "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": data.get("timestamp", datetime.now().isoformat()),
         "location": data.get("location", "Unknown"),
         "camera_id": data.get("camera_id"),
+        "context": data.get("context", {}),  # ✅ ADD THIS
         "detections": [
             {
                 "type": det.get("type"),
@@ -204,7 +212,8 @@ async def receive_detection(data: dict):
                 "image_url": det.get("image_url"),
                 "plate_number": det.get("plate_number"),
                 "bounding_box": None
-            } for det in data.get("detections", [])
+            }
+            for det in data.get("detections", [])
         ],
         "status": "pending"
     }
