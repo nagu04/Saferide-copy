@@ -14,6 +14,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+
 export function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'live' | 'analytics'>('live');
@@ -26,15 +27,24 @@ export function Dashboard() {
   const { isConnected } = useWebSocket((message: WebSocketMessage) => {
     if (message.type === 'new_violation') {
       const newViolation = message.data as Violation;
+
+      // 1. Update the list of recent violations
       setRecentViolations(prev => [newViolation, ...prev.slice(0, 9)]);
 
+      // 2. Show toast notification
       showToast.violationAlert(
         newViolation.detections[0]?.type || 'Unknown',
         newViolation.location,
         newViolation.detections[0]?.plate_number || ''
       );
+
+      // 3. Navigate to the violation detail page
+      navigate(`/incidents/${newViolation.id}`);
+
+      // 4. Refresh stats if needed
       loadStats();
     }
+
     if (message.type === 'system_status') {
       const status = message.data.status as 'online' | 'offline' | 'maintenance';
       showToast.systemStatus(status, message.data.message);

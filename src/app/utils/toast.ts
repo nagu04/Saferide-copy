@@ -65,7 +65,12 @@ export const showToast = {
   /**
    * Real-time violation alert - for new violations
    */
-  violationAlert: (violationType: string, location: string, plateNumber?: string) => {
+  violationAlert: (
+  violationType: string,
+  location: string,
+  plateNumber?: string,
+  onView?: () => void
+  ) => {
     toast.error('New Violation Detected!', {
       description: `${violationType} violation at ${location}${plateNumber ? ` - Plate: ${plateNumber}` : ''}`,
       icon: '🚨',
@@ -73,7 +78,7 @@ export const showToast = {
       action: {
         label: 'View',
         onClick: () => {
-          // Will be handled by parent component
+          if (onView) onView();
         },
       },
     });
