@@ -55,63 +55,59 @@ export function IncidentDetail() {
   };
 
   const handleConfirmDecision = () => {
-    // Close the decision modal and open confirmation dialog
-    setShowDecisionModal(false);
-    
-    if (decisionType === 'Approve') {
-      setConfirmAction('approve');
-    } else if (decisionType === 'Reject') {
-      setConfirmAction('reject');
-    } else if (decisionType === 'Needs Info') {
-      setConfirmAction('needsInfo');
-    }
-    
-    setShowConfirmDialog(true);
-  };
+      // Close the decision modal and open confirmation dialog
+      setShowDecisionModal(false);
+      
+      if (decisionType === 'Approve') {
+        setConfirmAction('approve');
+      } else if (decisionType === 'Reject') {
+        setConfirmAction('reject');
+      } else if (decisionType === 'Needs Info') {
+        setConfirmAction('needsInfo');
+      }
+      
+      setShowConfirmDialog(true);
+    };
 
-  const handleReopen = () => {
-    setConfirmAction('reopen');
-    setShowConfirmDialog(true);
-  };
+    const handleReopen = () => {
+      setConfirmAction('reopen');
+      setShowConfirmDialog(true);
+    };
 
-  const executeAction = async () => {
+    const executeAction = async () => {
     setIsProcessing(true);
-    
+
     try {
       // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
+      await new Promise((resolve) => setTimeout(resolve, 500)); // keep short
+
       const incidentId = id || 'INC-2023-001';
-      
-      if (confirmAction === 'approve' || decisionType === 'Approve') {
-        setStatus('Approved');
-        showToast.incidentApproved(incidentId);
-        
-        // Show audit log notification
-        setTimeout(() => {
-          showToast.info('Audit Log Updated', 'Incident approval has been logged for compliance tracking.');
-        }, 1500);
-      } 
-      
-      if (confirmAction === 'reject' || decisionType === 'Reject') {
-        setStatus('Rejected');
-        showToast.incidentRejected(incidentId, reviewerNote || undefined);
-      } 
-      
-      if (confirmAction === 'needsInfo' || decisionType === 'Needs Info') {
-        setStatus('Needs Info');
-        showToast.info('Additional Information Requested', `Incident ${incidentId} marked for additional review.`);
+
+      switch (confirmAction) {
+        case 'approve':
+          setStatus('Approved');
+          showToast.incidentApproved(incidentId);
+          showToast.info('Audit Log Updated', 'Incident approval has been logged.');
+          break;
+        case 'reject':
+          setStatus('Rejected');
+          showToast.incidentRejected(incidentId, reviewerNote || undefined);
+          break;
+        case 'needsInfo':
+          setStatus('Needs Info');
+          showToast.info('Additional Information Requested', `Incident ${incidentId} marked for additional review.`);
+          break;
+        case 'reopen':
+          setStatus('Pending');
+          showToast.info('Case Reopened', `Incident ${incidentId} has been reopened.`);
+          break;
+        default:
+          break;
       }
-      
-      if (confirmAction === 'reopen') {
-        setStatus('Pending');
-        showToast.info('Case Reopened', `Incident ${incidentId} has been reopened for review.`);
-      }
-      
+
       setShowConfirmDialog(false);
       setConfirmAction(null);
       setReviewerNote('');
-      
     } catch (error) {
       showToast.error('Action Failed', 'Unable to process incident decision. Please try again.');
     } finally {
