@@ -1,6 +1,6 @@
 import React from 'react';
 import type { WebSocketMessage } from '@/app/types';
-import { showToast } from './toast';
+import { showToast } from '@/app/utils/toast';
 
 const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA !== 'false';
 
