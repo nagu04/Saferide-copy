@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
+from random import randint, uniform
 import jwt
 from passlib.context import CryptContext
 import cv2
@@ -367,6 +368,24 @@ async def get_recent_violations(limit: int = 10, current_user: User = Depends(ge
 @app.get("/api/audit/logs")
 async def get_audit_logs(current_user: User = Depends(get_current_user)):
     return MOCK_AUDIT_LOGS
+
+@app.get("/api/dashboard/trends")
+async def get_trends(hours: int = 6, current_user: User = Depends(get_current_user)):
+    """
+    Return mock trend data for the past `hours`.
+    Each entry represents a timestamp and number of violations detected.
+    """
+    now = datetime.utcnow()
+    trends = []
+    for i in range(hours):
+        trends.append({
+            "timestamp": (now - timedelta(hours=i)).isoformat(),
+            "total_violations": randint(0, 5),
+            "helmet_violations": randint(0, 3),
+            "plate_violations": randint(0, 2),
+            "overloading_violations": randint(0, 1)
+        })
+    return list(reversed(trends))  # oldest first
 # ==================== Camera RTSP Streaming ====================
 
 camera_streams: Dict[str, "FFMpegCameraStream"] = {}
