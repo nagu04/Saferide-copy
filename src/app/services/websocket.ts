@@ -1,5 +1,6 @@
 import React from 'react';
 import type { WebSocketMessage } from '@/app/types';
+import { showToast } from './toast';
 
 const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA !== 'false';
 
@@ -35,11 +36,26 @@ class WebSocketService {
         this.reconnectAttempts = 0;
         const token = localStorage.getItem('access_token');
         if (token && this.ws) this.ws.send(JSON.stringify({ type: 'auth', token }));
+        console.log('WebSocket connected');
       };
 
       this.ws.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
+
+          // --- REAL-TIME VIOLATION TOAST ---
+          if (message.type === 'new_violation') {
+            const violation = message.data;
+            const detection = violation.detections[0];
+
+            showToast.violationAlert(
+              detection?.type || 'Unknown',
+              violation.location,
+              detection?.plate_number,
+              () => console.log('View violation', violation.id)
+            );
+          }
+
           this.messageHandlers.forEach(handler => handler(message));
         } catch (err) {
           console.error('WebSocket parse error', err);
