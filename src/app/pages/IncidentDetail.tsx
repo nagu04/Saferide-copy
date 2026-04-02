@@ -4,7 +4,6 @@ import { ArrowLeft, MapPin, Calendar, Clock, Sun, ShieldCheck, ShieldAlert, Help
 import { showToast } from '@/app/utils/toast';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { ImageViewer, ImageViewerImage } from '@/app/components/ImageViewer';
-import { useWebSocket } from '@/app/services/websocket';
 
 export function IncidentDetail() {
   const { id } = useParams();
@@ -32,20 +31,78 @@ export function IncidentDetail() {
       .catch(err => console.error(err));
   }, [id]);
 
-  useWebSocket((message) => {
-    if (message.type === 'update_violation' && message.data.id === id) {
-      const updatedIncident = message.data;
-      setIncident(prev => ({ ...prev, ...updatedIncident }));
-      setStatus(updatedIncident.status ? updatedIncident.status.charAt(0).toUpperCase() + updatedIncident.status.slice(1) : 'Pending');
-      if (updatedIncident.reviewerNote) setReviewerNote(updatedIncident.reviewerNote);
+  useEffect(() => {
+    if (!id) return;
 
-      showToast.info(
-        'Incident Updated',
-        `Incident ${updatedIncident.id} status changed to ${updatedIncident.status || 'Pending'}`
-      );
+    let ws: WebSocket;
+    let reconnectTimeout: any;
+    let pingInterval: any;
+
+    function connect() {
+      ws = new WebSocket('wss://saferide-l724.onrender.com/ws/violations');
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        pingInterval = setInterval(() => {
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping' }));
+        }, 20000);
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        if (message.type === 'update_violation' && message.data.id == id) {
+          const updatedIncident = message.data;
+          setIncident(prev => ({
+            ...prev,
+            ...updatedIncident,
+            detections: updatedIncident.detections || prev.detections
+          }));
+
+          setStatus(updatedIncident.status ? updatedIncident.status.charAt(0).toUpperCase() + updatedIncident.status.slice(1) : 'Pending');
+
+          if (updatedIncident.reviewerNote) setReviewerNote(updatedIncident.reviewerNote);
+
+          showToast.info('Incident Updated', `Incident ${updatedIncident.id} status changed to ${updatedIncident.status || 'Pending'}`);
+        }
+
+        if (message.type === 'new_detection' && message.data.incident_id == id) {
+          setIncident(prev => {
+            const existing = prev.detections || [];
+            const alreadyExists = existing.some(d => d.id === message.data.id);
+
+            if (alreadyExists) return prev;
+
+            return {
+              ...prev,
+              detections: [...existing, message.data]
+            };
+          });
+
+          showToast.info('New Evidence Added');
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket closed, reconnecting...');
+        clearInterval(pingInterval);
+        reconnectTimeout = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = (err) => {
+        console.error(err);
+        ws.close();
+      };
     }
-  }, true);
-  
+
+    connect();
+
+    return () => {
+      if (ws) ws.close();
+      clearTimeout(reconnectTimeout);
+      clearInterval(pingInterval);
+    };
+  }, [id]);
 
   // Evidence images data
   const evidenceImages: ImageViewerImage[] =
@@ -71,59 +128,63 @@ export function IncidentDetail() {
   };
 
   const handleConfirmDecision = () => {
-      // Close the decision modal and open confirmation dialog
-      setShowDecisionModal(false);
-      
-      if (decisionType === 'Approve') {
-        setConfirmAction('approve');
-      } else if (decisionType === 'Reject') {
-        setConfirmAction('reject');
-      } else if (decisionType === 'Needs Info') {
-        setConfirmAction('needsInfo');
-      }
-      
-      setShowConfirmDialog(true);
-    };
+    // Close the decision modal and open confirmation dialog
+    setShowDecisionModal(false);
+    
+    if (decisionType === 'Approve') {
+      setConfirmAction('approve');
+    } else if (decisionType === 'Reject') {
+      setConfirmAction('reject');
+    } else if (decisionType === 'Needs Info') {
+      setConfirmAction('needsInfo');
+    }
+    
+    setShowConfirmDialog(true);
+  };
 
-    const handleReopen = () => {
-      setConfirmAction('reopen');
-      setShowConfirmDialog(true);
-    };
+  const handleReopen = () => {
+    setConfirmAction('reopen');
+    setShowConfirmDialog(true);
+  };
 
-    const executeAction = async () => {
+  const executeAction = async () => {
     setIsProcessing(true);
-
+    
     try {
       // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500)); // keep short
-
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      
       const incidentId = id || 'INC-2023-001';
-
-      switch (confirmAction) {
-        case 'approve':
-          setStatus('Approved');
-          showToast.incidentApproved(incidentId);
-          showToast.info('Audit Log Updated', 'Incident approval has been logged.');
-          break;
-        case 'reject':
-          setStatus('Rejected');
-          showToast.incidentRejected(incidentId, reviewerNote || undefined);
-          break;
-        case 'needsInfo':
-          setStatus('Needs Info');
-          showToast.info('Additional Information Requested', `Incident ${incidentId} marked for additional review.`);
-          break;
-        case 'reopen':
-          setStatus('Pending');
-          showToast.info('Case Reopened', `Incident ${incidentId} has been reopened.`);
-          break;
-        default:
-          break;
+      
+      if (confirmAction === 'approve' || decisionType === 'Approve') {
+        setStatus('Approved');
+        showToast.incidentApproved(incidentId);
+        
+        // Show audit log notification
+        setTimeout(() => {
+          showToast.info('Audit Log Updated', 'Incident approval has been logged for compliance tracking.');
+        }, 1500);
+      } 
+      
+      if (confirmAction === 'reject' || decisionType === 'Reject') {
+        setStatus('Rejected');
+        showToast.incidentRejected(incidentId, reviewerNote || undefined);
+      } 
+      
+      if (confirmAction === 'needsInfo' || decisionType === 'Needs Info') {
+        setStatus('Needs Info');
+        showToast.info('Additional Information Requested', `Incident ${incidentId} marked for additional review.`);
       }
-
+      
+      if (confirmAction === 'reopen') {
+        setStatus('Pending');
+        showToast.info('Case Reopened', `Incident ${incidentId} has been reopened for review.`);
+      }
+      
       setShowConfirmDialog(false);
       setConfirmAction(null);
       setReviewerNote('');
+      
     } catch (error) {
       showToast.error('Action Failed', 'Unable to process incident decision. Please try again.');
     } finally {

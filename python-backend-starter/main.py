@@ -159,12 +159,14 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+import asyncio
+
 @app.websocket("/ws/violations")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            await asyncio.sleep(30)  # keep connection alive
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
