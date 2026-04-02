@@ -3,9 +3,11 @@ import { Link } from 'react-router';
 import { Search, Filter, Calendar, MapPin, AlertTriangle, Trash2, Check, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'motion/react';
+import { AlertCircle } from 'lucide-react';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { showToast } from '@/app/utils/toast';
 import { Checkbox } from '@/app/components/ui/checkbox';
+
 
 const INCIDENTS_DATA = [
   { id: 'INC-2023-001', date: '2023-10-25T14:32:00', location: 'Gate 1 Cam', type: 'No Helmet', status: 'Pending', confidence: 0.94 },

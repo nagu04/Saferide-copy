@@ -4,13 +4,13 @@
  */
 
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle2, XCircle, Info, Bell, Shield } from 'lucide-react';
+import { TriangleAlert, CheckCircle2, XCircle, Info, Bell, Shield } from 'lucide-react';
 
 // Toast icons
 const icons = {
   success: CheckCircle2,
   error: XCircle,
-  warning: AlertTriangle,
+  warning: TriangleAlert,
   info: Info,
   alert: Bell,
   security: Shield,

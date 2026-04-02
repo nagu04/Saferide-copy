@@ -1,6 +1,23 @@
 import React from 'react';
 import { Button } from '@/app/components/ui/button';
-import { AlertCircle } from 'lucide-react';
+
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogFooter,
+} from '@/app/components/ui/alert-dialog';
+
+import { 
+  AlertTriangle,
+  AlertCircle,
+  XCircle,
+  CheckCircle,
+  Info
+} from 'lucide-react';
 import { componentStyles, cx, animations } from '@/app/utils/animations';
 
 type ConfirmDialogVariant = 'danger' | 'warning' | 'info' | 'success';
@@ -70,41 +87,33 @@ export function ConfirmDialog({
   };
 
   return (
-    <div
-      className={cx(
-        componentStyles.dialogOverlay,
-        'p-4'
-      )}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onCancel();
-        }
-      }}
-    >
-      <div className={cx(
-        componentStyles.dialogContent,
-        'w-full max-w-md'
-      )}>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="bg-slate-900 border-slate-800 text-white">
+        
         <div className="flex items-start gap-4">
-          <div className={`p-2 rounded-full ${variantStyles.iconBg} flex-shrink-0`}>
+          <div className={`p-2 rounded-full ${variantStyles.iconBg}`}>
             {variantStyles.icon}
           </div>
-          <div className="flex-1 pt-1">
-            <AlertDialogTitle className="text-white text-lg">
+
+          <div>
+            <AlertDialogTitle className="text-lg text-white">
               {title}
             </AlertDialogTitle>
+
             <AlertDialogDescription className="text-slate-400 mt-2">
               {description}
             </AlertDialogDescription>
           </div>
         </div>
-        <div className="mt-6">
+
+        <AlertDialogFooter className="mt-6">
           <AlertDialogCancel
             disabled={loading}
-            className="bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border-slate-700"
+            className="bg-slate-800 text-slate-300 hover:bg-slate-700"
           >
             {cancelText}
           </AlertDialogCancel>
+
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
@@ -115,8 +124,9 @@ export function ConfirmDialog({
           >
             {loading ? 'Processing...' : confirmText}
           </AlertDialogAction>
-        </div>
-      </div>
-    </div>
+        </AlertDialogFooter>
+
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

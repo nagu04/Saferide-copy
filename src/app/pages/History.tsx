@@ -51,13 +51,20 @@ export function History() {
       const newViolation = {
         ...msg.data,
         detections: Array.isArray(msg.data.detections)
-          ? msg.data.detections.map((d: any) => ({
-              type: d.type || d.violation_type || 'Unknown',
-              image_url: d.image_url || d.image || 'https://via.placeholder.com/200',
+          ? msg.data.detections.map((d) => ({
+              type: d.type || 'Unknown',
+              image_url: d.image_url || 'https://via.placeholder.com/200',
             }))
           : [],
       };
       setHistoryData(prev => [newViolation, ...prev]);
+    }
+
+    if (msg.type === 'update_violation') {
+      const updated = msg.data;
+      setHistoryData(prev =>
+        prev.map(v => v.id === updated.id ? { ...v, ...updated } : v)
+      );
     }
   });
 
@@ -201,7 +208,7 @@ export function History() {
                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${
                       row.status === 'Reported' ? 'text-green-400' : 'text-slate-400'
                     }`}>
-                      {row.status}
+                      {row.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                     </span>
                   </td>
                   <td className="px-6 py-4">

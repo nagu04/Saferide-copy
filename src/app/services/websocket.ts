@@ -19,7 +19,7 @@ class WebSocketService {
 
   constructor() {
     const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
-    this.wsUrl = `${WS_BASE_URL}/ws/violations`;
+    this.wsUrl = `${WS_BASE_URL}/ws`;
   }
 
   connect(): void {

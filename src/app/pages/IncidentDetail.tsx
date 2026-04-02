@@ -22,7 +22,13 @@ export function IncidentDetail() {
   useEffect(() => {
     if (!id) return;
 
-    fetch(`https://saferide-l724.onrender.com/api/violations/${id}`)
+    const token = localStorage.getItem('access_token');
+
+    fetch(`https://saferide-l724.onrender.com/api/violations/${id}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
       .then(res => res.json())
       .then(data => {
         setIncident(data);
@@ -40,7 +46,7 @@ export function IncidentDetail() {
 
     const connect = () => {
       console.log('Attempting WebSocket connection...');
-      ws = new WebSocket('wss://saferide-l724.onrender.com/ws/violations');
+      ws = new WebSocket('wss://saferide-l724.onrender.com/ws');
 
       ws.onopen = () => {
         console.log('WebSocket connected');
@@ -53,7 +59,9 @@ export function IncidentDetail() {
         }, 20000);
 
         // Subscribe to this incident updates
-        ws.send(JSON.stringify({ type: 'subscribe', incident_id: id }));
+        if (ws) {
+          ws.send(JSON.stringify({ type: 'subscribe', incident_id: id }));
+        }
       };
 
       ws.onmessage = (event) => {
@@ -160,18 +168,21 @@ export function IncidentDetail() {
   };
 
   const handleConfirmDecision = () => {
-    // Close the decision modal and open confirmation dialog
+    if (!decisionType) return;
+
+    // Map decisionType to confirmAction
+    let action: 'approve' | 'reject' | 'needsInfo' =
+      decisionType === 'Approve' ? 'approve' :
+      decisionType === 'Reject' ? 'reject' :
+      'needsInfo';
+
+    setConfirmAction(action);
+
+    // Close decision modal before showing confirm dialog
     setShowDecisionModal(false);
-    
-    if (decisionType === 'Approve') {
-      setConfirmAction('approve');
-    } else if (decisionType === 'Reject') {
-      setConfirmAction('reject');
-    } else if (decisionType === 'Needs Info') {
-      setConfirmAction('needsInfo');
-    }
-    
-    setShowConfirmDialog(true);
+
+    // Show confirm dialog
+    setTimeout(() => setShowConfirmDialog(true), 50);
   };
 
   const handleReopen = () => {
@@ -183,33 +194,76 @@ export function IncidentDetail() {
     setIsProcessing(true);
 
     try {
-      const response = await fetch(`https://saferide-l724.onrender.com/api/violations/${id}/decision`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: confirmAction, // 'approve', 'reject', 'needsInfo', 'reopen'
-          reviewerNote
-        })
-      });
+      const actionToSend =
+        confirmAction === 'approve' ? 'approve' :
+        confirmAction === 'reject' ? 'reject' :
+        confirmAction === 'needsInfo' ? 'needsInfo' :
+        confirmAction === 'reopen' ? 'reopen' : null;
 
-      if (!response.ok) throw new Error('Failed to update incident');
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(
+        `https://saferide-l724.onrender.com/api/violations/${id}/decision`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            action: actionToSend,
+            reviewerNote: reviewerNote
+          })
+        }
+      );
 
-      // You can optionally update the UI immediately
-      const incidentId = id || 'INC-2023-001';
-      if (confirmAction === 'approve') setStatus('Approved');
-      if (confirmAction === 'reject') setStatus('Rejected');
-      if (confirmAction === 'needsInfo') setStatus('Needs Info');
-      if (confirmAction === 'reopen') setStatus('Pending');
+      if (!response.ok) {
+        throw new Error('Failed to update incident');
+      }
+
+      const incidentId = id || '';
+
+      if (actionToSend === 'approve') {
+        setStatus('Approved');
+        showToast.incidentApproved(incidentId);
+
+        setTimeout(() => {
+          showToast.info(
+            'Audit Log Updated',
+            'Incident approval has been logged for compliance tracking.'
+          );
+        }, 1500);
+      }
+
+      if (actionToSend === 'reject') {
+        setStatus('Rejected');
+        showToast.incidentRejected(incidentId, reviewerNote || undefined);
+      }
+
+      if (actionToSend === 'needsInfo') {
+        setStatus('Needs Info');
+        showToast.info(
+          'Additional Information Requested',
+          `Incident ${incidentId} marked for additional review.`
+        );
+      }
+
+      if (actionToSend === 'reopen') {
+        setStatus('Pending');
+        showToast.info(
+          'Case Reopened',
+          `Incident ${incidentId} has been reopened for review.`
+        );
+      }
 
       setShowConfirmDialog(false);
       setConfirmAction(null);
       setReviewerNote('');
 
-      showToast.info(`Incident ${incidentId} updated successfully!`);
-
-    } catch (err) {
-      console.error(err);
-      showToast.error('Action Failed', 'Unable to process incident decision.');
+    } catch (error) {
+      showToast.error(
+        'Action Failed',
+        'Unable to process incident decision. Please try again.'
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -502,17 +556,21 @@ export function IncidentDetail() {
                  </div>
                  
                  {decisionType === 'Reject' && (
-                   <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">Reason for Rejection *</label>
-                      <select className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:outline-none">
-                         <option>False Positive (No Violation)</option>
-                         <option>Unclear Image / Obstruction</option>
-                         <option>Duplicate Entry</option>
-                         <option>Emergency Vehicle</option>
-                         <option>Other</option>
-                      </select>
-                   </div>
-                 )}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">Reason for Rejection *</label>
+                    <select
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:outline-none"
+                      value={reviewerNote}
+                      onChange={(e) => setReviewerNote(e.target.value)}
+                    >
+                      <option value="False Positive (No Violation)">False Positive (No Violation)</option>
+                      <option value="Unclear Image / Obstruction">Unclear Image / Obstruction</option>
+                      <option value="Duplicate Entry">Duplicate Entry</option>
+                      <option value="Emergency Vehicle">Emergency Vehicle</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 justify-end">

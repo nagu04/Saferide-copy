@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { AlertTriangle, HardHat, Scale, FileWarning, Clock, AlertCircle, CameraOff } from 'lucide-react';
+import { TriangleAlert, HardHat, Scale, FileWarning, Clock, AlertCircle, CameraOff } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { motion } from 'motion/react';

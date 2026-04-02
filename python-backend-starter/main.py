@@ -37,6 +37,8 @@ app.add_middleware(
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+
+
 # ==================== Models ====================
 
 class LoginRequest(BaseModel):
@@ -229,15 +231,64 @@ async def receive_detection(data: dict):
     MOCK_VIOLATIONS.insert(0, violation)
     
     # 🔔 Real-time notification to subscribed clients
+    await manager.broadcast_all({
+        "type": "new_violation",
+        "data": violation
+    })
+    
+    return {"status": "received", "violation": violation}
+
+# ==================== Violation Decisions ====================
+
+class DecisionRequest(BaseModel):
+    action: str
+    reviewerNote: Optional[str] = None
+
+
+@app.post("/api/violations/{violation_id}/decision")
+async def decide_violation(
+    violation_id: str,
+    decision: DecisionRequest,
+    current_user: User = Depends(get_current_user)
+):
+    # Find violation
+    violation = None
+    for v in MOCK_VIOLATIONS:
+        if v["id"] == violation_id:
+            violation = v
+            break
+
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    # Update status based on action
+    if decision.action == "approve":
+        violation["status"] = "approved"
+    elif decision.action == "reject":
+        violation["status"] = "rejected"
+    elif decision.action == "needsInfo":
+        violation["status"] = "needs_info"
+    elif decision.action == "reopen":
+        violation["status"] = "pending"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+    violation["reviewer_note"] = decision.reviewerNote
+    violation["reviewed_by"] = current_user.full_name
+    violation["reviewed_at"] = datetime.now().isoformat()
+
     await manager.broadcast_incident(
-        violation["id"],
+        violation_id,
         {
-            "type": "new_detection",
+            "type": "update_violation",
             "data": violation
         }
     )
-    
-    return {"status": "received", "violation": violation}
+
+    return {
+        "status": "success",
+        "violation": violation
+    }
 
 # ==================== Dashboard ====================
 
