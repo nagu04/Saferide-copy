@@ -1,39 +1,77 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Filter, Calendar, Clock, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { showToast } from '@/app/utils/toast';
-
-const LOGS = [
-  { id: 1, action: 'Login', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T14:00:00', details: 'Successful login', type: 'auth' },
-  { id: 2, action: 'Update Record', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T14:05:22', details: 'Approved INC-2023-002 (Reason: Valid Violation)', type: 'record' },
-  { id: 3, action: 'Export', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T14:10:15', details: 'Generated PDF Report Batch #8841', type: 'export' },
-  { id: 4, action: 'System Update', user: 'system', ip: 'localhost', time: '2023-10-25T14:32:05', details: 'New incident detected: INC-2023-001', type: 'system' },
-  { id: 5, action: 'Settings Change', user: 'superadmin', ip: '10.0.0.5', time: '2023-10-25T13:50:00', details: 'Updated Confidence Threshold to 0.5', type: 'settings' },
-  { id: 6, action: 'Login', user: 'admin', ip: '192.168.1.15', time: '2023-10-25T13:45:33', details: 'Successful login', type: 'auth' },
-  { id: 7, action: 'Delete Record', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T13:30:12', details: 'Deleted INC-2023-001 (Reason: False Positive)', type: 'delete' },
-  { id: 8, action: 'Logout', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T13:25:00', details: 'User logged out', type: 'auth' },
-  { id: 9, action: 'Failed Login', user: 'unknown', ip: '203.0.113.5', time: '2023-10-25T13:20:18', details: 'Invalid credentials attempt', type: 'security' },
-  { id: 10, action: 'Export', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T13:15:44', details: 'Exported violation history CSV', type: 'export' },
-  { id: 11, action: 'Update Record', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T13:10:00', details: 'Rejected INC-2023-005 (Reason: Insufficient Evidence)', type: 'record' },
-  { id: 12, action: 'Login', user: 'operator1', ip: '192.168.1.20', time: '2023-10-25T13:00:00', details: 'Successful login', type: 'auth' },
-  { id: 13, action: 'System Update', user: 'system', ip: 'localhost', time: '2023-10-25T12:50:30', details: 'Database backup completed', type: 'system' },
-  { id: 14, action: 'Settings Change', user: 'superadmin', ip: '10.0.0.5', time: '2023-10-25T12:40:00', details: 'Updated notification preferences', type: 'settings' },
-  { id: 15, action: 'Export', user: 'admin', ip: '192.168.1.10', time: '2023-10-25T12:30:22', details: 'Generated monthly report', type: 'export' },
-];
+import api from '@/app/services/api';
+import { useWebSocket } from '@/app/services/websocket';
 
 export function AuditLog() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('All');
 
-  const filteredLogs = LOGS.filter(log => {
+  const filteredLogs = logs.filter(log => {
     const matchesSearch = searchTerm === '' || 
-      log.user.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.user || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.ip.includes(searchTerm);
     
     if (filterType !== 'All' && log.type !== filterType) return false;
     return matchesSearch;
+  });
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      setLoading(true);
+      try {
+        const res = await api.audit.getLogs(); // make sure endpoint exists
+
+        const mapped = (res || []).map((log: any, index: number) => ({
+          id: log.id || index,
+          action: log.action,
+          user: log.user || 'system',
+          ip: log.ip || 'unknown',
+          time: log.timestamp,
+          details: log.details,
+          type: log.type || 'system'
+        }));
+
+        // newest first
+        mapped.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        setLogs(mapped);
+      } catch (err) {
+        console.error(err);
+        showToast.error('Failed to load audit logs');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, []);
+
+  useWebSocket((msg) => {
+    if (msg.type === 'audit_log') {
+      const log = msg.data;
+      const newLog = {
+        id: log.id,
+        action: log.action,
+        user: log.user || 'system',
+        ip: log.ip || 'unknown',
+        time: log.timestamp,
+        details: log.details,
+        type: log.type || 'system'
+      };
+
+      setLogs(prev => {
+        if (prev.find(l => l.id === newLog.id)) return prev;
+        showToast.info(`New audit event: ${newLog.action} by ${newLog.user}`);
+        return [newLog, ...prev].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      });
+    }
   });
 
   const getActivityIcon = (type: string) => {
@@ -81,7 +119,7 @@ export function AuditLog() {
   const handleExportLogs = () => {
     const headers = ['Timestamp', 'User', 'Action', 'Details', 'IP Address'];
     const csvData = filteredLogs.map(log => [
-      format(new Date(log.time), 'yyyy-MM-dd HH:mm:ss'),
+      format(new Date(log.time ? new Date(log.time) : new Date()), 'yyyy-MM-dd HH:mm:ss'),
       log.user,
       log.action,
       `"${log.details}"`,
@@ -103,6 +141,14 @@ export function AuditLog() {
     
     showToast.success('Audit logs exported successfully');
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-slate-400">Loading audit logs...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -205,24 +251,24 @@ export function AuditLog() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
           <div className="text-sm text-slate-400 mb-2">Total Events</div>
-          <div className="text-2xl font-bold text-white">{LOGS.length}</div>
+          <div className="text-2xl font-bold text-white">{logs.length}</div>
         </div>
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
           <div className="text-sm text-slate-400 mb-2">User Logins</div>
           <div className="text-2xl font-bold text-blue-400">
-            {LOGS.filter(a => a.type === 'auth' && a.action === 'Login').length}
+            {logs.filter(a => a.type === 'auth' && a.action === 'Login').length}
           </div>
         </div>
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
           <div className="text-sm text-slate-400 mb-2">Records Modified</div>
           <div className="text-2xl font-bold text-green-400">
-            {LOGS.filter(a => a.type === 'record').length}
+            {logs.filter(a => a.type === 'record').length}
           </div>
         </div>
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
           <div className="text-sm text-slate-400 mb-2">Security Events</div>
           <div className="text-2xl font-bold text-red-400">
-            {LOGS.filter(a => a.type === 'security').length}
+            {logs.filter(a => a.type === 'security').length}
           </div>
         </div>
       </div>

@@ -1,24 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { Search, Filter, Calendar, MapPin, AlertTriangle, Trash2, Check, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'motion/react';
 import { AlertCircle } from 'lucide-react';
+import { api } from '@/app/services/api';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { showToast } from '@/app/utils/toast';
 import { Checkbox } from '@/app/components/ui/checkbox';
+import { useWebSocket } from '@/app/services/websocket';
 
 
-const INCIDENTS_DATA = [
-  { id: 'INC-2023-001', date: '2023-10-25T14:32:00', location: 'Gate 1 Cam', type: 'No Helmet', status: 'Pending', confidence: 0.94 },
-  { id: 'INC-2023-002', date: '2023-10-25T14:28:00', location: 'Main St Cam', type: 'Overloading', status: 'Approved', confidence: 0.88 },
-  { id: 'INC-2023-003', date: '2023-10-25T14:15:00', location: 'Gate 1 Cam', type: 'No Plate', status: 'Rejected', confidence: 0.91 },
-  { id: 'INC-2023-004', date: '2023-10-25T14:10:00', location: 'Gate 2 Cam', type: 'No Helmet', status: 'Needs Info', confidence: 0.97 },
-  { id: 'INC-2023-005', date: '2023-10-25T13:55:00', location: 'Gate 1 Cam', type: 'No Helmet', status: 'Pending', confidence: 0.92 },
-  { id: 'INC-2023-006', date: '2023-10-25T13:40:00', location: 'Main St Cam', type: 'Overloading', status: 'Pending', confidence: 0.85 },
-];
+
 
 export function Incidents() {
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterType, setFilterType] = useState('All');
   const [selectedIncidents, setSelectedIncidents] = useState<string[]>([]);
@@ -26,7 +24,79 @@ export function Incidents() {
   const [bulkAction, setBulkAction] = useState<'approve' | 'reject' | 'delete' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const filteredIncidents = INCIDENTS_DATA.filter(incident => {
+  useEffect(() => {
+    const fetchIncidents = async () => {
+      setLoading(true);
+      try {
+        const recent = await api.dashboard.getRecentViolations(50);
+
+        const mapped = (recent || []).map(v => ({
+          id: v.id,
+          date: v.timestamp,
+          location: v.location,
+          type: v.detections?.[0]?.type || 'Unknown',
+          status: v.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          confidence: v.detections?.[0]?.confidence || 0
+        }));
+
+        mapped.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        setIncidents(mapped);
+      } catch (err) {
+        console.error(err);
+        showToast.error('Failed to load incidents');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchIncidents();
+  }, []);
+
+  useWebSocket((msg) => {
+    if (msg.type === 'new_violation') {
+      const v = msg.data;
+
+      const newIncident = {
+        id: v.id,
+        date: v.timestamp,
+        location: v.location,
+        type: v.detections?.[0]?.type || 'Unknown',
+        status: v.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        confidence: v.detections?.[0]?.confidence || 0
+      };
+
+      setIncidents(prev => {
+        if (prev.find(i => i.id === newIncident.id)) return prev;
+        return [newIncident, ...prev];
+      });
+    }
+
+    if (msg.type === 'update_violation') {
+      const updated = msg.data;
+
+      setIncidents(prev =>
+        prev.map(i =>
+          i.id === updated.id
+            ? {
+                ...i,
+                status: updated.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+              }
+            : i
+        )
+      );
+    }
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-slate-400">Loading incidents...</div>
+      </div>
+    );
+  }
+
+  const filteredIncidents = incidents.filter(incident => {
     if (filterStatus !== 'All' && incident.status !== filterStatus) return false;
     if (filterType !== 'All' && incident.type !== filterType) return false;
     return true;

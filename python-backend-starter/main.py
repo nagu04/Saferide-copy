@@ -104,6 +104,8 @@ MOCK_USER = {
 
 MOCK_VIOLATIONS = []
 
+MOCK_AUDIT_LOGS = []
+
 MOCK_CAMERAS = [
     {"id": "CAM-001", "name": "Main Gate", "location": "Sucat Main Gate"},
 ]
@@ -129,6 +131,25 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         raise HTTPException(status_code=401, detail="Invalid token")
     except:
         raise HTTPException(status_code=401, detail="Invalid token")
+    
+async def add_audit_log(action, user="system", details="", log_type="system", ip="unknown"):
+    log = {
+        "id": f"LOG-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+        "action": action,
+        "user": user,
+        "details": details,
+        "type": log_type,
+        "ip": ip,
+        "timestamp": datetime.now().isoformat()
+    }
+
+    MOCK_AUDIT_LOGS.insert(0, log)
+
+    # realtime push to frontend
+    await manager.broadcast_all({
+        "type": "audit_log",
+        "data": log
+    })
 
 # ==================== Authentication ====================
 
@@ -235,6 +256,13 @@ async def receive_detection(data: dict):
         "type": "new_violation",
         "data": violation
     })
+
+    await add_audit_log(
+        action="NEW VIOLATION DETECTED",
+        user="AI System",
+        details=f"Violation {violation['id']} detected at {violation['location']}",
+        log_type="system"
+    )
     
     return {"status": "received", "violation": violation}
 
@@ -285,6 +313,13 @@ async def decide_violation(
         }
     )
 
+    await add_audit_log(
+        action=f"{decision.action.upper()} VIOLATION",
+        user=current_user.full_name,
+        details=f"Violation {violation_id} marked as {violation['status']}",
+        log_type="record"
+    )
+
     return {
         "status": "success",
         "violation": violation
@@ -328,6 +363,10 @@ async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
 @app.get("/api/dashboard/recent")
 async def get_recent_violations(limit: int = 10, current_user: User = Depends(get_current_user)):
     return MOCK_VIOLATIONS[:limit]
+
+@app.get("/api/audit/logs")
+async def get_audit_logs(current_user: User = Depends(get_current_user)):
+    return MOCK_AUDIT_LOGS
 # ==================== Camera RTSP Streaming ====================
 
 camera_streams: Dict[str, "FFMpegCameraStream"] = {}
