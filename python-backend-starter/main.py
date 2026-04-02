@@ -144,28 +144,49 @@ async def login(credentials: LoginRequest):
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections = []
+        self.subscribers = {}  # incident_id -> list of websockets
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket):
         await websocket.accept()
         self.active_connections.append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    def disconnect(self, websocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        for subs in self.subscribers.values():
+            if websocket in subs:
+                subs.remove(websocket)
 
-    async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            await connection.send_json(message)
+    async def subscribe(self, websocket, incident_id):
+        if incident_id not in self.subscribers:
+            self.subscribers[incident_id] = []
+        self.subscribers[incident_id].append(websocket)
+
+    async def broadcast_incident(self, incident_id, message):
+        if incident_id in self.subscribers:
+            for ws in self.subscribers[incident_id]:
+                await ws.send_json(message)
+
+    async def broadcast_all(self, message):
+        for ws in self.active_connections:
+            await ws.send_json(message)
 
 manager = ConnectionManager()
 
-@app.websocket("/ws/violations")
+@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
+            data = await websocket.receive_json()
+
+            if data["type"] == "subscribe":
+                await manager.subscribe(websocket, data["incident_id"])
+
+            if data["type"] == "ping":
+                await websocket.send_json({"type": "pong"})
+    except:
         manager.disconnect(websocket)
 
 # ==================== Violations ====================
@@ -186,25 +207,12 @@ async def get_violation_by_id(violation_id: str):
 
 @app.post("/api/detections")
 async def receive_detection(data: dict):
-    # Convert incoming detections to ViolationDetection format
-    detections_list = []
-    for det in data.get("detections", []):
-        detections_list.append({
-            "type": det.get("type"),
-            "confidence": det.get("confidence"),
-            # Keep bounding_box None (not provided by mock)
-            "bounding_box": None,
-            # Include image_url and plate_number for frontend
-            "image_url": det.get("image_url"),
-            "plate_number": det.get("plate_number")
-        })
-    
     violation = {
         "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
         "timestamp": data.get("timestamp", datetime.now().isoformat()),
         "location": data.get("location", "Unknown"),
         "camera_id": data.get("camera_id"),
-        "context": data.get("context", {}),  # ✅ ADD THIS
+        "context": data.get("context", {}),
         "detections": [
             {
                 "type": det.get("type"),
@@ -218,11 +226,16 @@ async def receive_detection(data: dict):
         "status": "pending"
     }
     
-    # Insert newest violation at the top
     MOCK_VIOLATIONS.insert(0, violation)
     
-    # Broadcast to all connected websocket clients
-    await manager.broadcast({"type": "new_violation", "data": violation})
+    # 🔔 Real-time notification to subscribed clients
+    await manager.broadcast_incident(
+        violation["id"],
+        {
+            "type": "new_detection",
+            "data": violation
+        }
+    )
     
     return {"status": "received", "violation": violation}
 
