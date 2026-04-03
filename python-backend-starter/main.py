@@ -200,18 +200,24 @@ manager = ConnectionManager()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    print("WebSocket connection attempt...")
     await manager.connect(websocket)
+    print("WebSocket connected!")
+
     try:
         while True:
             data = await websocket.receive_json()
+            print("WS received:", data)
 
             if data["type"] == "subscribe":
                 await manager.subscribe(websocket, data["incident_id"])
 
             if data["type"] == "ping":
                 await websocket.send_json({"type": "pong"})
-    except:
+    except Exception as e:
+        print("WebSocket error:", e)
         manager.disconnect(websocket)
+        print("WebSocket disconnected")
 
 # ==================== Violations ====================
 
