@@ -22,6 +22,7 @@ export function Dashboard() {
   const [trendData, setTrendData] = useState<ViolationTrendData[]>([]);
   const [recentViolations, setRecentViolations] = useState<Violation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
 
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket((message: WebSocketMessage) => {
@@ -43,13 +44,16 @@ export function Dashboard() {
       // navigate(`/incidents/${newViolation.id}`);
 
       // 4. Refresh stats if needed
-      loadStats();
     }
     if (message.type === 'update_violation') {
       const updated = message.data as Violation;
       setRecentViolations(prev =>
         prev.map(v => (v.id === updated.id ? { ...v, ...updated } : v))
       );
+    }
+
+    if (message.type === 'stats_update') {
+      loadStats();
     }
 
     if (message.type === 'system_status') {
@@ -59,13 +63,27 @@ export function Dashboard() {
   }, false);
 
   useEffect(() => {
-    loadDashboardData();
-    const interval = setInterval(() => loadDashboardData(), 30000);
+    const init = async () => {
+      await Promise.all([
+        loadStats(),
+        loadTrends(),
+        loadRecentViolations()
+      ]);
+      setIsLoading(false);
+    };
+
+    init();
+
+    const interval = setInterval(() => {
+      loadStats();
+      loadTrends();
+    }, 30000);
+
     return () => clearInterval(interval);
   }, []);
 
   const loadDashboardData = async () => {
-    await Promise.all([loadStats(), loadTrends(), loadRecentViolations()]);
+    await Promise.all([loadStats(), loadTrends()]);
     setIsLoading(false);
   };
 
@@ -86,10 +104,14 @@ export function Dashboard() {
   };
 
   const chartData = trendData.map(item => ({
-    time: new Date(item.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
-    helmet: item.helmet_count,
-    plate: item.plate_count,
-    overload: item.overload_count,
+    time: new Date(item.timestamp).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }),
+    helmet: item.helmet_violations,
+    plate: item.plate_violations,
+    overload: item.overloading_violations,
   }));
 
   if (isLoading) return (
@@ -238,55 +260,66 @@ function StatsCard({ title, value, trend, trendUp, subtitle, icon: Icon, color, 
   );
 }
 
+
+
 // --- LiveFeed Component ---
 function LiveFeed() {
-  const [hasError, setHasError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
+  const [status, setStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
 
+  const retry = () => {
+    setStatus('connecting');
+    setRetryKey(prev => prev + 1);
+  };
+
+  // Auto retry when offline
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (hasError) {
+
+    if (status === 'offline') {
       timer = setTimeout(() => {
-        setHasError(false);
-        setRetryCount(prev => prev + 1);
-      }, 3000);
+        setRetryKey(prev => prev + 1);
+        setStatus('connecting');
+      }, 5000);
     }
+
     return () => clearTimeout(timer);
-  }, [hasError]);
+  }, [status]);
 
   return (
-    <div className="w-full h-full relative bg-black flex items-center justify-center border border-slate-800/50">
-      {!hasError ? (
-        <img
-          key={retryCount}
-          src="https://polite-towns-stay.loca.lt/camera-feed/CAM-001" // Backend must serve MJPEG/stream
-          style={{ width: "100%", borderRadius: "10px" }}
-          alt="Live Feed"
-          className="w-full h-full object-cover"
-          onError={() => setHasError(true)}
-        />
-      ) : (
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-yellow-500 animate-ping" />
-            <p className="text-slate-400 text-sm font-medium">Attempting to reconnect...</p>
-          </div>
-          <CameraOff className="w-8 h-8 text-slate-700" />
-          <button 
-            onClick={() => { setHasError(false); setRetryCount(prev => prev + 1); }}
-            className="px-3 py-1 bg-blue-600/20 text-blue-400 rounded-md text-xs hover:bg-blue-600/30 transition-colors"
+    <div className="w-full h-full relative bg-black flex items-center justify-center">
+      <img
+        key={retryKey}
+        src="https://polite-towns-stay.loca.lt/camera-feed/CAM-001"
+        className="w-full h-full object-cover"
+        onLoad={() => setStatus('live')}
+        onError={() => setStatus('offline')}
+      />
+
+      {status !== 'live' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60">
+          <CameraOff className="w-8 h-8 text-slate-500 mb-2" />
+          <p className="text-slate-400 text-sm">
+            {status === 'connecting' ? 'Connecting to camera...' : 'Camera Offline'}
+          </p>
+          <button
+            onClick={retry}
+            className="mt-3 px-3 py-1 bg-blue-600/20 text-blue-400 rounded-md text-xs"
           >
-            Manual Retry
+            Retry
           </button>
         </div>
       )}
-      {!hasError && (
-        <div className="absolute top-4 right-4 flex gap-2">
-           <span className="bg-black/60 backdrop-blur-md text-[10px] text-green-400 px-2 py-1 rounded border border-green-500/30">
-             CONNECTED
-           </span>
+
+      {status === 'live' && (
+        <div className="absolute top-4 right-4">
+          <span className="bg-black/60 text-[10px] text-green-400 px-2 py-1 rounded border border-green-500/30">
+            LIVE
+          </span>
         </div>
       )}
     </div>
   );
 }
+
+export default LiveFeed;

@@ -11,6 +11,7 @@ from passlib.context import CryptContext
 import cv2
 import threading
 import queue
+import numpy as np
 
 # ==================== Configuration ====================
 
@@ -275,6 +276,10 @@ async def receive_detection(data: dict):
         "data": violation
     })
 
+    await manager.broadcast_all({
+        "type": "stats_update"
+    })
+
     await add_audit_log(
         action="NEW VIOLATION DETECTED",
         user="AI System",
@@ -297,7 +302,6 @@ async def decide_violation(
     decision: DecisionRequest,
     current_user: User = Depends(get_current_user)
 ):
-    # Find violation
     violation = None
     for v in MOCK_VIOLATIONS:
         if v["id"] == violation_id:
@@ -307,7 +311,6 @@ async def decide_violation(
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
 
-    # Update status based on action
     if decision.action == "approve":
         violation["status"] = "approved"
     elif decision.action == "reject":
@@ -323,13 +326,11 @@ async def decide_violation(
     violation["reviewed_by"] = current_user.full_name
     violation["reviewed_at"] = datetime.now().isoformat()
 
-    await manager.broadcast_incident(
-        violation_id,
-        {
-            "type": "update_violation",
-            "data": violation
-        }
-    )
+    # IMPORTANT CHANGE HERE
+    await manager.broadcast_all({
+        "type": "update_violation",
+        "data": violation
+    })
 
     await add_audit_log(
         action=f"{decision.action.upper()} VIOLATION",
@@ -440,12 +441,26 @@ def get_camera_stream(camera_id: str) -> FFMpegCameraStream:
         camera_streams[camera_id] = FFMpegCameraStream(RTSP_URLS[camera_id])
     return camera_streams[camera_id]
 
+def generate_offline_frame():
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    cv2.putText(img, "CAMERA OFFLINE", (150, 240),
+                cv2.FONT_HERSHEY_SIMPLEX, 1,
+                (0, 0, 255), 2, cv2.LINE_AA)
+    ret, buffer = cv2.imencode('.jpg', img)
+    return buffer.tobytes()
+
+OFFLINE_FRAME = generate_offline_frame()
+
 def gen_frames(stream: FFMpegCameraStream):
     while True:
         frame = stream.get_frame()
         if frame:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            output = frame
+        else:
+            output = OFFLINE_FRAME  # show offline image instead
+
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + output + b'\r\n')
 
 @app.get("/camera-feed/{camera_id}")
 def camera_feed(camera_id: str):
@@ -458,6 +473,18 @@ def camera_feed(camera_id: str):
 @app.get("/api/cameras", response_model=List[Camera])
 async def get_cameras(current_user: User = Depends(get_current_user)):
     return MOCK_CAMERAS
+
+@app.get("/api/cameras/status")
+async def camera_status():
+    status = []
+    for cam_id, url in RTSP_URLS.items():
+        cap = cv2.VideoCapture(url)
+        if cap.isOpened():
+            status.append({"camera_id": cam_id, "status": "online"})
+        else:
+            status.append({"camera_id": cam_id, "status": "offline"})
+        cap.release()
+    return status
 
 # ==================== Health ====================
 
