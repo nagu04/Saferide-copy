@@ -44,6 +44,7 @@ export function Dashboard() {
       // navigate(`/incidents/${newViolation.id}`);
 
       // 4. Refresh stats if needed
+      loadRecentViolations();
     }
     if (message.type === 'update_violation') {
       const updated = message.data as Violation;

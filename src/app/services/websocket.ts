@@ -9,13 +9,14 @@ type MessageHandler = (message: WebSocketMessage) => void;
 class WebSocketService {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = Infinity;
   private reconnectDelay = 3000;
   private messageHandlers: Set<MessageHandler> = new Set();
   private isConnecting = false;
   private shouldReconnect = true;
   private isEnabled = !USE_MOCK_DATA;
   private wsUrl: string;
+  private pingInterval: any = null;
 
   constructor() {
     const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
@@ -34,9 +35,18 @@ class WebSocketService {
       this.ws.onopen = () => {
         this.isConnecting = false;
         this.reconnectAttempts = 0;
+
         const token = localStorage.getItem('access_token');
         if (token && this.ws) this.ws.send(JSON.stringify({ type: 'auth', token }));
+
         console.log('WebSocket connected');
+
+        // Start ping
+        this.pingInterval = setInterval(() => {
+          if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 20000);
       };
 
       this.ws.onmessage = (event) => {
@@ -70,6 +80,12 @@ class WebSocketService {
       this.ws.onclose = () => {
         this.isConnecting = false;
         this.ws = null;
+
+        if (this.pingInterval) {
+          clearInterval(this.pingInterval);
+          this.pingInterval = null;
+        }
+
         if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
           setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
@@ -81,9 +97,13 @@ class WebSocketService {
   }
 
   disconnect(): void {
-    this.shouldReconnect = false;
-    this.ws?.close(1000, 'Client disconnecting');
-    this.ws = null;
+      this.shouldReconnect = false;
+      if (this.pingInterval) {
+          clearInterval(this.pingInterval);
+          this.pingInterval = null;
+      }
+      this.ws?.close(1000, 'Client disconnecting');
+      this.ws = null;
   }
 
   onMessage(handler: MessageHandler): () => void {
@@ -136,3 +156,4 @@ export function useWebSocket(
     send: (msg: any) => websocketService.send(msg),
   };
 }
+

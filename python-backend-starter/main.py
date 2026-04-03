@@ -194,15 +194,12 @@ class ConnectionManager:
                 await ws.send_json(message)
 
     async def broadcast_all(self, message):
-        dead = []
-        for ws in self.active_connections:
+        for ws in list(self.active_connections):
             try:
                 await ws.send_json(message)
-            except:
-                dead.append(ws)
-
-        for ws in dead:
-            self.disconnect(ws)
+            except Exception as e:
+                print("WS send error:", e)
+                self.disconnect(ws)
 
 manager = ConnectionManager()
 
