@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router';
 import { Toaster } from 'sonner';
 import { ProtectedRoute } from '@/app/components/ProtectedRoute';
@@ -23,6 +23,16 @@ import { ViolationDetail } from '@/app/pages/user/ViolationDetail';
 import { ViolationProvider } from '@/app/contexts/ViolationContext';
 
 export default function App() {
+
+  useEffect(() => {
+    const keepAlive = setInterval(() => {
+      fetch("https://saferide-l724.onrender.com/health")
+        .then(() => console.log("Server awake"))
+        .catch(() => console.log("Server asleep"));
+    }, 60000); // every 1 min
+
+    return () => clearInterval(keepAlive);
+  }, []);
   return (
     <ViolationProvider>
       <BrowserRouter>

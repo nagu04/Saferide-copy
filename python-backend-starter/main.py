@@ -193,8 +193,15 @@ class ConnectionManager:
                 await ws.send_json(message)
 
     async def broadcast_all(self, message):
+        dead = []
         for ws in self.active_connections:
-            await ws.send_json(message)
+            try:
+                await ws.send_json(message)
+            except:
+                dead.append(ws)
+
+        for ws in dead:
+            self.disconnect(ws)
 
 manager = ConnectionManager()
 
@@ -209,15 +216,19 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_json()
             print("WS received:", data)
 
-            if data["type"] == "subscribe":
+            if data.get("type") == "subscribe":
                 await manager.subscribe(websocket, data["incident_id"])
 
-            if data["type"] == "ping":
+            elif data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
+
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+        manager.disconnect(websocket)
+
     except Exception as e:
         print("WebSocket error:", e)
         manager.disconnect(websocket)
-        print("WebSocket disconnected")
 
 # ==================== Violations ====================
 
