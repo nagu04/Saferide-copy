@@ -219,6 +219,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
+            elif data.get("type") == "auth":
+                token = data.get("token")
+                try:
+                    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                    print("WS Authenticated:", payload.get("sub"))
+                except:
+                    await websocket.close(code=1008)
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
@@ -232,9 +239,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/violations")
 async def get_violations(current_user: User = Depends(get_current_user)):
-    # Return violations in the same structure your frontend expects
     return {
-        "violations": MOCK_VIOLATIONS
+        "violations": MOCK_VIOLATIONS,
+        "total": len(MOCK_VIOLATIONS),
+        "page": 1,
+        "page_size": len(MOCK_VIOLATIONS)
     }
 
 @app.get("/api/violations/{violation_id}")
@@ -293,7 +302,7 @@ class DecisionRequest(BaseModel):
     reviewerNote: Optional[str] = None
 
 
-@app.post("/api/violations/{violation_id}/decision")
+@app.post("/api/violations/{violation_id}/review")
 async def decide_violation(
     violation_id: str,
     decision: DecisionRequest,
@@ -401,6 +410,69 @@ async def get_trends(hours: int = 6, current_user: User = Depends(get_current_us
             "overloading_violations": randint(0, 1)
         })
     return list(reversed(trends))  # oldest first
+
+@app.delete("/api/violations/{violation_id}")
+async def delete_violation(
+    violation_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    global MOCK_VIOLATIONS
+
+    before_count = len(MOCK_VIOLATIONS)
+    MOCK_VIOLATIONS = [v for v in MOCK_VIOLATIONS if v["id"] != violation_id]
+
+    if len(MOCK_VIOLATIONS) == before_count:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    await manager.broadcast_all({
+        "type": "delete_violation",
+        "id": violation_id
+    })
+
+    await manager.broadcast_all({
+        "type": "stats_update"
+    })
+    
+
+    await add_audit_log(
+        action="DELETE VIOLATION",
+        user=current_user.full_name,
+        details=f"Violation {violation_id} deleted",
+        log_type="record"
+    )
+
+    return {"status": "deleted"}
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
+
+@app.post("/api/violations/bulk-delete")
+async def bulk_delete_violations(
+    data: BulkDeleteRequest,
+    current_user: User = Depends(get_current_user)
+):
+    global MOCK_VIOLATIONS
+
+    deleted_ids = data.ids
+    MOCK_VIOLATIONS = [v for v in MOCK_VIOLATIONS if v["id"] not in deleted_ids]
+
+    await manager.broadcast_all({
+        "type": "bulk_delete",
+        "ids": deleted_ids
+    })
+
+    await manager.broadcast_all({
+        "type": "stats_update"
+    })
+
+    await add_audit_log(
+        action="BULK DELETE",
+        user=current_user.full_name,
+        details=f"Deleted {len(deleted_ids)} violations",
+        log_type="record"
+    )
+
+    return {"status": "deleted", "count": len(deleted_ids)}
 # ==================== Camera RTSP Streaming ====================
 
 camera_streams: Dict[str, "FFMpegCameraStream"] = {}

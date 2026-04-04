@@ -23,6 +23,9 @@ export function Incidents() {
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [bulkAction, setBulkAction] = useState<'approve' | 'reject' | 'delete' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+ 
+
 
   useEffect(() => {
     const fetchIncidents = async () => {
@@ -86,6 +89,30 @@ export function Incidents() {
         )
       );
     }
+
+    if (msg.type === 'bulk_delete') {
+      const ids = msg.ids;
+
+      setIncidents(prev =>
+        prev.filter(i => !ids.includes(i.id))
+      );
+    }
+
+    if (msg.type === 'delete_violation') {
+      setIncidents(prev =>
+        prev.filter(i => i.id !== msg.id)
+      );
+    }
+
+    if (msg.type === 'stats_update') {
+  // Refetch dashboard data
+      fetch("/api/dashboard/stats", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
+      })
+      .then(res => res.json())
+      .then(data => setDashboardStats(data))
+      .catch(err => console.error(err));
+    }
   });
 
   if (loading) {
@@ -130,24 +157,29 @@ export function Incidents() {
     setShowBulkConfirm(false);
     
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      //await new Promise((resolve) => setTimeout(resolve, 1500));
       
       const count = selectedIncidents.length;
       
       if (bulkAction === 'approve') {
-        showToast.success('Bulk Approval Complete', `${count} incident(s) have been approved successfully.`);
+        showToast.success('Bulk Approval Complete', `${count} incident(s) approved.`);
       } else if (bulkAction === 'reject') {
-        showToast.success('Bulk Rejection Complete', `${count} incident(s) have been rejected successfully.`);
+        showToast.success('Bulk Rejection Complete', `${count} incident(s) rejected.`);
       } else if (bulkAction === 'delete') {
-        showToast.success('Bulk Delete Complete', `${count} incident(s) have been deleted successfully.`);
+        await api.violations.bulkDelete(selectedIncidents);
+
+        showToast.success(
+          'Bulk Delete Complete',
+          `${selectedIncidents.length} incident(s) deleted.`
+        );
       }
       
       setSelectedIncidents([]);
       setBulkAction(null);
       
-    } catch (error) {
-      showToast.error('Bulk Action Failed', 'Unable to process bulk action. Please try again.');
+    } catch (error: any) {
+      console.error("Bulk delete error:", error);
+      showToast.error('Bulk Action Failed', error.message || 'Check console');
     } finally {
       setIsProcessing(false);
     }

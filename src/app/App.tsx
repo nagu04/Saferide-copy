@@ -25,13 +25,16 @@ import { ViolationProvider } from '@/app/contexts/ViolationContext';
 export default function App() {
 
   useEffect(() => {
-    const keepAlive = setInterval(() => {
-      fetch("https://saferide-l724.onrender.com/health")
-        .then(() => console.log("Server awake"))
-        .catch(() => console.log("Server asleep"));
-    }, 60000); // every 1 min
+    const wakeServer = async () => {
+      try {
+        await fetch("https://saferide-l724.onrender.com/health");
+        console.log("Server awake");
+      } catch (e) {
+        console.log("Server wake failed");
+      }
+    };
 
-    return () => clearInterval(keepAlive);
+    wakeServer();
   }, []);
   return (
     <ViolationProvider>

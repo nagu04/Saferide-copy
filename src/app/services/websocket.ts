@@ -1,3 +1,4 @@
+// websocket.ts
 import React from 'react';
 import type { WebSocketMessage } from '@/app/types';
 import { showToast } from '@/app/utils/toast';
@@ -9,18 +10,24 @@ type MessageHandler = (message: WebSocketMessage) => void;
 class WebSocketService {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = Infinity;
-  private reconnectDelay = 3000;
+  private maxReconnectAttempts = 50;
+  private reconnectDelay = 1000;
   private messageHandlers: Set<MessageHandler> = new Set();
   private isConnecting = false;
   private shouldReconnect = true;
   private isEnabled = !USE_MOCK_DATA;
   private wsUrl: string;
   private pingInterval: any = null;
+  private statusHandlers: Set<(connected: boolean) => void> = new Set();
 
   constructor() {
     const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
     this.wsUrl = `${WS_BASE_URL}/ws`;
+  }
+
+  private notifyStatusChange() {
+    const connected = this.isConnected();
+    this.statusHandlers.forEach((h) => h(connected));
   }
 
   connect(): void {
@@ -40,6 +47,7 @@ class WebSocketService {
         if (token && this.ws) this.ws.send(JSON.stringify({ type: 'auth', token }));
 
         console.log('WebSocket connected');
+        this.notifyStatusChange();
 
         // Start ping
         this.pingInterval = setInterval(() => {
@@ -52,20 +60,6 @@ class WebSocketService {
       this.ws.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
-
-          // --- REAL-TIME VIOLATION TOAST ---
-          if (message.type === 'new_violation') {
-            const violation = message.data;
-            const detection = violation.detections[0];
-
-            showToast.violationAlert(
-              detection?.type || 'Unknown',
-              violation.location,
-              detection?.plate_number,
-              () => console.log('View violation', violation.id)
-            );
-          }
-
           this.messageHandlers.forEach(handler => handler(message));
         } catch (err) {
           console.error('WebSocket parse error', err);
@@ -75,6 +69,7 @@ class WebSocketService {
       this.ws.onerror = () => {
         console.warn('WebSocket error');
         this.isConnecting = false;
+        this.notifyStatusChange();
       };
 
       this.ws.onclose = () => {
@@ -86,29 +81,44 @@ class WebSocketService {
           this.pingInterval = null;
         }
 
-        if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.notifyStatusChange();
+
+        if (this.shouldReconnect) {
+          // Fast retries for first few attempts
+          let delay = 1000;
+          if (this.reconnectAttempts > 5) delay = 5000;
+          if (this.reconnectAttempts > 10) delay = 10000;
+
           this.reconnectAttempts++;
-          setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
+          console.log("Reconnecting WebSocket in", delay, "ms");
+
+          setTimeout(() => this.connect(), delay);
         }
       };
     } catch {
       this.isConnecting = false;
+      this.notifyStatusChange();
     }
   }
 
   disconnect(): void {
-      this.shouldReconnect = false;
-      if (this.pingInterval) {
-          clearInterval(this.pingInterval);
-          this.pingInterval = null;
-      }
-      this.ws?.close(1000, 'Client disconnecting');
-      this.ws = null;
+    this.shouldReconnect = false;
+    if (this.pingInterval) clearInterval(this.pingInterval);
+    this.ws?.close(1000, 'Client disconnecting');
+    this.ws = null;
+    this.notifyStatusChange();
   }
 
   onMessage(handler: MessageHandler): () => void {
     this.messageHandlers.add(handler);
     return () => this.messageHandlers.delete(handler);
+  }
+
+  onStatusChange(handler: (connected: boolean) => void): () => void {
+    this.statusHandlers.add(handler);
+    // immediately notify current state
+    handler(this.isConnected());
+    return () => this.statusHandlers.delete(handler);
   }
 
   send(message: any): void {
@@ -131,29 +141,51 @@ export default websocketService;
 
 export function useWebSocket(
   onMessage?: (message: WebSocketMessage) => void,
+  onStatsUpdate?: () => void,
   autoConnect: boolean = true
 ) {
-  const [isConnected, setIsConnected] = React.useState(websocketService.isConnected());
+  const [isConnected, setIsConnected] = React.useState(false);
+  const [isConnecting, setIsConnecting] = React.useState(false);
 
+  // Handle WS connection status
   React.useEffect(() => {
-    if (autoConnect && !USE_MOCK_DATA) websocketService.connect();
+    if (!autoConnect) return;
 
-    let unsubscribe: (() => void) | undefined;
-    if (onMessage) unsubscribe = websocketService.onMessage(onMessage);
+    setIsConnecting(true);
 
-    const interval = setInterval(() => setIsConnected(websocketService.isConnected()), 2000);
+    websocketService.connect();
+
+    const unsubscribeStatus = websocketService.onStatusChange((connected) => {
+      setIsConnected(connected);
+      setIsConnecting(!connected);
+    });
 
     return () => {
-      clearInterval(interval);
-      if (unsubscribe) unsubscribe();
+      unsubscribeStatus();
+      websocketService.disconnect();
     };
-  }, [onMessage, autoConnect]);
+  }, [autoConnect]);
+
+  // Handle incoming messages
+  React.useEffect(() => {
+    if (!onMessage && !onStatsUpdate) return;
+
+    const unsubscribe = websocketService.onMessage((msg: WebSocketMessage) => {
+      if (msg.type === 'stats_update') {
+        onStatsUpdate?.();
+      } else {
+        onMessage?.(msg);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [onMessage, onStatsUpdate]);
 
   return {
     isConnected,
+    isConnecting,
     connect: () => websocketService.connect(),
     disconnect: () => websocketService.disconnect(),
     send: (msg: any) => websocketService.send(msg),
   };
 }
-

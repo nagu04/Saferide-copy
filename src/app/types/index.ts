@@ -224,6 +224,8 @@ export interface WebSocketMessage {
   data: any;
 }
 
+
+
 export interface NewViolationMessage extends WebSocketMessage {
   type: 'new_violation';
   data: Violation;

@@ -44,7 +44,12 @@ export function Dashboard() {
       // navigate(`/incidents/${newViolation.id}`);
 
       // 4. Refresh stats if needed
-      loadRecentViolations();
+      setStats(prev => prev ? {
+        ...prev,
+        helmet_violations: prev.helmet_violations + (newViolation.detections[0]?.type === 'no_helmet' ? 1 : 0),
+        plate_violations: prev.plate_violations + (newViolation.detections[0]?.type === 'no_plate' ? 1 : 0),
+        overloading_violations: prev.overloading_violations + (newViolation.detections[0]?.type === 'overloading' ? 1 : 0),
+      } : prev);
     }
     if (message.type === 'update_violation') {
       const updated = message.data as Violation;
@@ -61,7 +66,19 @@ export function Dashboard() {
       const status = message.data.status as 'online' | 'offline' | 'maintenance';
       showToast.systemStatus(status, message.data.message);
     }
-  }, false);
+
+    if (message.type === 'bulk_delete') {
+      setRecentViolations(prev =>
+        prev.filter(v => !message.ids.includes(v.id))
+      );
+    }
+
+    if (message.type === 'delete_violation') {
+      setRecentViolations(prev =>
+        prev.filter(v => v.id !== message.id)
+      );
+    }
+  }, true);
 
   useEffect(() => {
     const init = async () => {
@@ -81,6 +98,14 @@ export function Dashboard() {
     }, 30000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const keepAlive = setInterval(() => {
+      fetch("https://saferide-l724.onrender.com/health").catch(() => {});
+    }, 4 * 60 * 1000); // every 4 minutes
+
+    return () => clearInterval(keepAlive);
   }, []);
 
   const loadDashboardData = async () => {

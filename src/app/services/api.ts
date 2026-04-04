@@ -131,8 +131,9 @@ async function apiRequest<T>(
     });
 
     if (!response.ok) {
-      const error: APIError = await response.json();
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      const errorText = await response.text();
+      console.error("Backend error:", errorText);
+      throw new Error(errorText || `HTTP ${response.status}`);
     }
 
     return await response.json();
@@ -277,6 +278,20 @@ export const violationsAPI = {
       {
         method: 'POST',
         body: JSON.stringify(decision),
+      }
+    );
+  },
+  async bulkDelete(ids: string[]): Promise<void> {
+    if (USE_MOCK_DATA) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return;
+    }
+
+    await apiRequest(
+      '/api/violations/bulk-delete',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
       }
     );
   },
