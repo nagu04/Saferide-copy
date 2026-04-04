@@ -105,13 +105,9 @@ export function Incidents() {
     }
 
     if (msg.type === 'stats_update') {
-  // Refetch dashboard data
-      fetch("/api/dashboard/stats", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
-      })
-      .then(res => res.json())
-      .then(data => setDashboardStats(data))
-      .catch(err => console.error(err));
+      api.dashboard.getStats()
+        .then(data => setDashboardStats(data))
+        .catch(err => console.error(err));
     }
   });
 
@@ -157,15 +153,19 @@ export function Incidents() {
     setShowBulkConfirm(false);
     
     try {
-      //await new Promise((resolve) => setTimeout(resolve, 1500));
-      
       const count = selectedIncidents.length;
       
       if (bulkAction === 'approve') {
+        await api.violations.bulkReview(selectedIncidents, "approve");
+
         showToast.success('Bulk Approval Complete', `${count} incident(s) approved.`);
-      } else if (bulkAction === 'reject') {
+      } 
+      else if (bulkAction === 'reject') {
+        await api.violations.bulkReview(selectedIncidents, "reject");
+
         showToast.success('Bulk Rejection Complete', `${count} incident(s) rejected.`);
-      } else if (bulkAction === 'delete') {
+      } 
+      else if (bulkAction === 'delete') {
         await api.violations.bulkDelete(selectedIncidents);
 
         showToast.success(
@@ -178,7 +178,7 @@ export function Incidents() {
       setBulkAction(null);
       
     } catch (error: any) {
-      console.error("Bulk delete error:", error);
+      console.error("Bulk action error:", error);
       showToast.error('Bulk Action Failed', error.message || 'Check console');
     } finally {
       setIsProcessing(false);

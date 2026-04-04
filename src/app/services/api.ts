@@ -295,6 +295,14 @@ export const violationsAPI = {
       }
     );
   },
+
+  bulkReview: async (ids: string[], action: string) => {
+    await apiRequest("/api/violations/bulk-review", {
+      method: "POST",
+      body: JSON.stringify({ ids, action }),
+    });
+  },
+
 };
 
 // ==================== Dashboard API ====================

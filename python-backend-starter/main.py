@@ -473,6 +473,51 @@ async def bulk_delete_violations(
     )
 
     return {"status": "deleted", "count": len(deleted_ids)}
+
+class BulkReviewRequest(BaseModel):
+    ids: List[str]
+    action: str  # approve | reject | needsInfo | reopen
+
+@app.post("/api/violations/bulk-review")
+async def bulk_review_violations(
+    data: BulkReviewRequest,
+    current_user: User = Depends(get_current_user)
+):
+    updated_ids = []
+
+    for v in MOCK_VIOLATIONS:
+        if v["id"] in data.ids:
+            if data.action == "approve":
+                v["status"] = "approved"
+            elif data.action == "reject":
+                v["status"] = "rejected"
+            elif data.action == "needsInfo":
+                v["status"] = "needs_info"
+            elif data.action == "reopen":
+                v["status"] = "pending"
+
+            v["reviewed_by"] = current_user.full_name
+            v["reviewed_at"] = datetime.now().isoformat()
+            updated_ids.append(v["id"])
+
+            # broadcast each update
+            await manager.broadcast_all({
+                "type": "update_violation",
+                "data": v
+            })
+
+    await manager.broadcast_all({
+        "type": "stats_update"
+    })
+
+    await add_audit_log(
+        action="BULK REVIEW",
+        user=current_user.full_name,
+        details=f"{data.action} {len(updated_ids)} violations",
+        log_type="record"
+    )
+
+    return {"status": "updated", "count": len(updated_ids)}
 # ==================== Camera RTSP Streaming ====================
 
 camera_streams: Dict[str, "FFMpegCameraStream"] = {}

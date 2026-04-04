@@ -2,6 +2,7 @@
 import React from 'react';
 import type { WebSocketMessage } from '@/app/types';
 import { showToast } from '@/app/utils/toast';
+import { api } from '@/app/services/api';
 
 const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA !== 'false';
 
@@ -26,8 +27,8 @@ class WebSocketService {
   }
 
   private notifyStatusChange() {
-    const connected = this.isConnected();
-    this.statusHandlers.forEach((h) => h(connected));
+    const connected = this.ws?.readyState === WebSocket.OPEN;
+    this.statusHandlers.forEach(handler => handler(connected));
   }
 
   connect(): void {
@@ -44,12 +45,27 @@ class WebSocketService {
         this.reconnectAttempts = 0;
 
         const token = localStorage.getItem('access_token');
-        if (token && this.ws) this.ws.send(JSON.stringify({ type: 'auth', token }));
+        this.ws?.send(JSON.stringify({
+          type: "auth",
+          token
+        }));
+
+        // 🔥 SUBSCRIBE TO ALL INCIDENTS
+        this.ws?.send(JSON.stringify({
+          type: "subscribe",
+          incident_id: "all"
+        }));
+
+        this.ws?.send(JSON.stringify({
+          type: "sync_request"
+        }));
 
         console.log('WebSocket connected');
         this.notifyStatusChange();
 
         // Start ping
+        if (this.pingInterval) clearInterval(this.pingInterval);
+
         this.pingInterval = setInterval(() => {
           if (this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ type: 'ping' }));
@@ -158,11 +174,16 @@ export function useWebSocket(
     const unsubscribeStatus = websocketService.onStatusChange((connected) => {
       setIsConnected(connected);
       setIsConnecting(!connected);
+
+      if (connected) {
+        api.dashboard.getRecentViolations(50).catch(() => {});
+        api.dashboard.getStats().catch(() => {});
+      }
     });
 
     return () => {
       unsubscribeStatus();
-      websocketService.disconnect();
+      //websocketService.disconnect();
     };
   }, [autoConnect]);
 

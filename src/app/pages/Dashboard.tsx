@@ -30,7 +30,10 @@ export function Dashboard() {
       const newViolation = message.data as Violation;
 
       // 1. Update the list of recent violations
-      setRecentViolations(prev => [newViolation, ...prev.slice(0, 19)]); // keeps top 20
+      setRecentViolations(prev => {
+        if (prev.find(v => v.id === newViolation.id)) return prev;
+        return [newViolation, ...prev.slice(0, 19)];
+      });
 
       // 2. Show toast notification (clickable to navigate)
       showToast.violationAlert(
