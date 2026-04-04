@@ -1,95 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileDown, FileText, Calendar, Filter, Download, Trash2 } from 'lucide-react';
 import { showToast } from '@/app/utils/toast';
 
-// Sample recent reports data
-const RECENT_REPORTS = [
-  { id: 1, name: 'Violation_Summary_Oct2023.pdf', size: '2.4 MB', date: '2023-10-25 14:30', user: 'Admin', type: 'PDF' },
-  { id: 2, name: 'Monthly_Report_Sep2023.xlsx', size: '1.8 MB', date: '2023-10-20 09:15', user: 'Admin', type: 'XLSX' },
-  { id: 3, name: 'Enforcement_Performance_Q3.pdf', size: '3.2 MB', date: '2023-10-15 16:45', user: 'Supervisor', type: 'PDF' },
-  { id: 4, name: 'Raw_Data_Export_Oct2023.csv', size: '856 KB', date: '2023-10-10 11:20', user: 'Admin', type: 'CSV' },
-  { id: 5, name: 'System_Health_Report.pdf', size: '1.2 MB', date: '2023-10-05 08:00', user: 'System', type: 'PDF' },
-];
+
 
 // Complete violation data generator
-const generateViolationData = (startDate: string, endDate: string) => {
-  const violations = [];
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  
-  const violationTypes = ['No Helmet', 'No Plate', 'Overloading'];
-  const locations = [
-    'Quezon Ave & Timog Ave',
-    'EDSA - Cubao',
-    'Commonwealth Ave - Fairview',
-    'C5 Road - Katipunan',
-    'España Blvd',
-    'Taft Ave - Vito Cruz',
-    'Roxas Blvd - Baclaran'
-  ];
-  const statuses = ['Pending', 'Approved', 'Rejected'];
-  
-  // Generate violations across date range
-  for (let i = 0; i < Math.min(days * 8, 200); i++) {
-    const violationDate = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
-    const type = violationTypes[Math.floor(Math.random() * violationTypes.length)];
-    const location = locations[Math.floor(Math.random() * locations.length)];
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const confidence = (85 + Math.random() * 14).toFixed(1);
-    
-    violations.push({
-      id: `VIO-${String(i + 1).padStart(5, '0')}`,
-      timestamp: violationDate.toISOString().replace('T', ' ').split('.')[0],
-      type,
-      location,
-      plateNumber: type !== 'No Plate' ? `ABC${Math.floor(Math.random() * 9000 + 1000)}` : 'UNDETECTED',
-      confidence: `${confidence}%`,
-      status,
-      reviewer: status !== 'Pending' ? `Officer ${Math.floor(Math.random() * 10 + 1)}` : 'N/A',
-      reviewedAt: status !== 'Pending' ? new Date(violationDate.getTime() + Math.random() * 86400000).toISOString().replace('T', ' ').split('.')[0] : 'N/A',
-      evidenceId: `IMG-${String(i + 1).padStart(6, '0')}.jpg`,
-      modelVersion: 'YOLOv11-v1.2.3',
-      speed: type === 'Overloading' ? `${Math.floor(Math.random() * 40 + 30)} km/h` : 'N/A',
-      passengers: type === 'Overloading' ? Math.floor(Math.random() * 2 + 3) : type === 'No Helmet' ? Math.floor(Math.random() * 2 + 1) : 1
-    });
-  }
-  
-  return violations.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-};
-
-// Generate metrics data
-const generateMetricsData = (startDate: string, endDate: string) => {
-  const violations = generateViolationData(startDate, endDate);
-  
-  const totalViolations = violations.length;
-  const byType = {
-    'No Helmet': violations.filter(v => v.type === 'No Helmet').length,
-    'No Plate': violations.filter(v => v.type === 'No Plate').length,
-    'Overloading': violations.filter(v => v.type === 'Overloading').length
-  };
-  const byStatus = {
-    'Pending': violations.filter(v => v.status === 'Pending').length,
-    'Approved': violations.filter(v => v.status === 'Approved').length,
-    'Rejected': violations.filter(v => v.status === 'Rejected').length
-  };
-  
-  const avgConfidence = (violations.reduce((sum, v) => sum + parseFloat(v.confidence), 0) / violations.length).toFixed(1);
-  const avgProcessingTime = '2.3 hours';
-  const detectionAccuracy = '94.2%';
-  const systemUptime = '99.7%';
-  
-  return {
-    totalViolations,
-    byType,
-    byStatus,
-    avgConfidence,
-    avgProcessingTime,
-    detectionAccuracy,
-    systemUptime,
-    violations
-  };
-};
 
 export function Reports() {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -98,7 +13,20 @@ export function Reports() {
   const [customEndDate, setCustomEndDate] = useState('');
   const [reportType, setReportType] = useState('Violation Summary (Daily)');
   const [format, setFormat] = useState('pdf');
-  const [recentReports, setRecentReports] = useState(RECENT_REPORTS);
+  const [recentReports, setRecentReports] = useState<any[]>([]);
+  
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch("https://saferide-l724.onrender.com/api/reports/recent", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setRecentReports(data.reports || []);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Calculate actual dates based on selected range
   const getDateRange = () => {
@@ -149,206 +77,92 @@ export function Reports() {
     };
   };
 
-  const handleGenerate = () => {
-    // Get date range
+  const handleGenerate = async () => {
     const dates = getDateRange();
-    
-    // Validation
-    if (!dates) {
-      showToast.error('Please select both start and end dates for custom range');
-      return;
-    }
 
-    if (new Date(dates.start) > new Date(dates.end)) {
-      showToast.error('Start date cannot be after end date');
+    if (!dates) {
+      showToast.error('Please select both start and end dates');
       return;
     }
 
     setIsGenerating(true);
-    
-    // Simulate report generation
-    setTimeout(() => {
-      setIsGenerating(false);
-      
-      // Generate filename based on selections
-      const formatExt = format === 'pdf' ? 'txt' : format === 'xlsx' ? 'csv' : 'csv';
-      const reportTypeName = reportType.replace(/[()]/g, '').replace(/\s+/g, '_');
-      const dateStr = new Date().toISOString().split('T')[0];
-      const filename = `${reportTypeName}_${dateStr}.${formatExt}`;
-      
-      // Create blob and download
-      const content = generateReportContent(reportType, dates.start, dates.end, format);
-      const blob = new Blob([content], { 
-        type: 'text/plain;charset=utf-8'
-      });
+
+    try {
+      const token = localStorage.getItem("access_token");
+
+      const res = await fetch(
+        `https://saferide-l724.onrender.com/api/reports/generate?start=${dates.start}&end=${dates.end}&format=${format}&type=${reportType}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const blob = await res.blob();
+
+      const filename = `Report_${dates.start}_${dates.end}.${format}`;
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+
+      const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       a.click();
+
       window.URL.revokeObjectURL(url);
-      
-      // Add to recent reports
-      const newReport = {
-        id: recentReports.length + 1,
-        name: filename,
-        size: `${(Math.random() * 3 + 0.5).toFixed(1)} MB`,
-        date: new Date().toLocaleString('en-US', { 
-          year: 'numeric', 
-          month: '2-digit', 
-          day: '2-digit', 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        user: 'Admin',
-        type: formatExt.toUpperCase()
-      };
-      
-      setRecentReports([newReport, ...recentReports]);
-      
-      showToast.success(`Report generated successfully: ${filename}`);
-    }, 2000);
-  };
 
-  const generateReportContent = (type: string, start: string, end: string, fmt: string) => {
-    const metricsData = generateMetricsData(start, end);
-    const violations = metricsData.violations;
-    
-    if (fmt === 'csv') {
-      // Generate comprehensive CSV with all violation data
-      let csv = `SafeRide - YOLOv11 Violation Detection System\n`;
-      csv += `Report Type: ${type}\n`;
-      csv += `Date Range: ${start} to ${end}\n`;
-      csv += `Generated: ${new Date().toLocaleString()}\n`;
-      csv += `Total Violations: ${metricsData.totalViolations}\n\n`;
-      
-      // Summary Statistics
-      csv += `SUMMARY STATISTICS\n`;
-      csv += `Metric,Value\n`;
-      csv += `Total Violations,${metricsData.totalViolations}\n`;
-      csv += `No Helmet Violations,${metricsData.byType['No Helmet']}\n`;
-      csv += `No Plate Violations,${metricsData.byType['No Plate']}\n`;
-      csv += `Overloading Violations,${metricsData.byType['Overloading']}\n`;
-      csv += `Pending Review,${metricsData.byStatus['Pending']}\n`;
-      csv += `Approved,${metricsData.byStatus['Approved']}\n`;
-      csv += `Rejected,${metricsData.byStatus['Rejected']}\n`;
-      csv += `Average Confidence,${metricsData.avgConfidence}%\n`;
-      csv += `Detection Accuracy,${metricsData.detectionAccuracy}\n`;
-      csv += `System Uptime,${metricsData.systemUptime}\n`;
-      csv += `Avg Processing Time,${metricsData.avgProcessingTime}\n\n`;
-      
-      // Detailed violation records
-      csv += `DETAILED VIOLATION RECORDS\n`;
-      csv += `Violation ID,Timestamp,Type,Location,Plate Number,Confidence,Status,Reviewer,Reviewed At,Evidence ID,Model Version,Speed,Passengers\n`;
-      violations.forEach(v => {
-        csv += `${v.id},${v.timestamp},${v.type},${v.location},${v.plateNumber},${v.confidence},${v.status},${v.reviewer},${v.reviewedAt},${v.evidenceId},${v.modelVersion},${v.speed},${v.passengers}\n`;
+      // 🔥 REFRESH RECENT REPORTS FROM BACKEND
+      const resRecent = await fetch("https://saferide-l724.onrender.com/api/reports/recent", {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      
-      return csv;
-    } else if (fmt === 'xlsx') {
-      // Generate Excel-formatted content (tab-separated for Excel compatibility)
-      let xlsx = `SafeRide - YOLOv11 Violation Detection System\n`;
-      xlsx += `Report Type\t${type}\n`;
-      xlsx += `Date Range\t${start} to ${end}\n`;
-      xlsx += `Generated\t${new Date().toLocaleString()}\n\n`;
-      
-      xlsx += `SUMMARY STATISTICS\n`;
-      xlsx += `Metric\tValue\n`;
-      xlsx += `Total Violations\t${metricsData.totalViolations}\n`;
-      xlsx += `No Helmet Violations\t${metricsData.byType['No Helmet']}\n`;
-      xlsx += `No Plate Violations\t${metricsData.byType['No Plate']}\n`;
-      xlsx += `Overloading Violations\t${metricsData.byType['Overloading']}\n`;
-      xlsx += `Pending Review\t${metricsData.byStatus['Pending']}\n`;
-      xlsx += `Approved\t${metricsData.byStatus['Approved']}\n`;
-      xlsx += `Rejected\t${metricsData.byStatus['Rejected']}\n`;
-      xlsx += `Average Confidence\t${metricsData.avgConfidence}%\n`;
-      xlsx += `Detection Accuracy\t${metricsData.detectionAccuracy}\n`;
-      xlsx += `System Uptime\t${metricsData.systemUptime}\n`;
-      xlsx += `Avg Processing Time\t${metricsData.avgProcessingTime}\n\n`;
-      
-      xlsx += `DETAILED VIOLATION RECORDS\n`;
-      xlsx += `Violation ID\tTimestamp\tType\tLocation\tPlate Number\tConfidence\tStatus\tReviewer\tReviewed At\tEvidence ID\tModel Version\tSpeed\tPassengers\n`;
-      violations.forEach(v => {
-        xlsx += `${v.id}\t${v.timestamp}\t${v.type}\t${v.location}\t${v.plateNumber}\t${v.confidence}\t${v.status}\t${v.reviewer}\t${v.reviewedAt}\t${v.evidenceId}\t${v.modelVersion}\t${v.speed}\t${v.passengers}\n`;
-      });
-      
-      return xlsx;
-    } else {
-      // Generate comprehensive PDF-formatted text
-      let pdf = `SafeRide - YOLOv11 Violation Detection System\n`;
-      pdf += `Real-Time Motorcycle Violation Detection Dashboard\n`;
-      pdf += `${'='.repeat(80)}\n\n`;
-      
-      pdf += `REPORT INFORMATION\n`;
-      pdf += `${'-'.repeat(80)}\n`;
-      pdf += `Report Type: ${type}\n`;
-      pdf += `Date Range: ${start} to ${end}\n`;
-      pdf += `Generated: ${new Date().toLocaleString()}\n`;
-      pdf += `Generated By: Admin\n\n`;
-      
-      pdf += `EXECUTIVE SUMMARY\n`;
-      pdf += `${'-'.repeat(80)}\n`;
-      pdf += `Total Violations Detected: ${metricsData.totalViolations}\n`;
-      pdf += `Average Detection Confidence: ${metricsData.avgConfidence}%\n`;
-      pdf += `System Detection Accuracy: ${metricsData.detectionAccuracy}\n`;
-      pdf += `System Uptime: ${metricsData.systemUptime}\n`;
-      pdf += `Average Processing Time: ${metricsData.avgProcessingTime}\n\n`;
-      
-      pdf += `VIOLATION BREAKDOWN BY TYPE\n`;
-      pdf += `${'-'.repeat(80)}\n`;
-      pdf += `No Helmet: ${metricsData.byType['No Helmet']} (${((metricsData.byType['No Helmet']/metricsData.totalViolations)*100).toFixed(1)}%)\n`;
-      pdf += `No Plate: ${metricsData.byType['No Plate']} (${((metricsData.byType['No Plate']/metricsData.totalViolations)*100).toFixed(1)}%)\n`;
-      pdf += `Overloading: ${metricsData.byType['Overloading']} (${((metricsData.byType['Overloading']/metricsData.totalViolations)*100).toFixed(1)}%)\n\n`;
-      
-      pdf += `VIOLATION STATUS\n`;
-      pdf += `${'-'.repeat(80)}\n`;
-      pdf += `Pending Review: ${metricsData.byStatus['Pending']} (${((metricsData.byStatus['Pending']/metricsData.totalViolations)*100).toFixed(1)}%)\n`;
-      pdf += `Approved: ${metricsData.byStatus['Approved']} (${((metricsData.byStatus['Approved']/metricsData.totalViolations)*100).toFixed(1)}%)\n`;
-      pdf += `Rejected: ${metricsData.byStatus['Rejected']} (${((metricsData.byStatus['Rejected']/metricsData.totalViolations)*100).toFixed(1)}%)\n\n`;
-      
-      pdf += `DETAILED VIOLATION RECORDS\n`;
-      pdf += `${'-'.repeat(80)}\n\n`;
-      violations.slice(0, 50).forEach((v, idx) => {
-        pdf += `[${idx + 1}] ${v.id}\n`;
-        pdf += `    Date/Time: ${v.timestamp}\n`;
-        pdf += `    Type: ${v.type} | Confidence: ${v.confidence}\n`;
-        pdf += `    Location: ${v.location}\n`;
-        pdf += `    Plate: ${v.plateNumber} | Passengers: ${v.passengers}\n`;
-        pdf += `    Status: ${v.status} | Reviewer: ${v.reviewer}\n`;
-        pdf += `    Evidence: ${v.evidenceId} | Model: ${v.modelVersion}\n`;
-        if (v.speed !== 'N/A') pdf += `    Speed: ${v.speed}\n`;
-        pdf += `\n`;
-      });
-      
-      if (violations.length > 50) {
-        pdf += `... and ${violations.length - 50} more violations\n`;
-        pdf += `(Download CSV or XLSX for complete records)\n`;
-      }
-      
-      pdf += `\n${'='.repeat(80)}\n`;
-      pdf += `End of Report\n`;
-      
-      return pdf;
+
+      const data = await resRecent.json();
+      setRecentReports(data.reports || []);
+
+      showToast.success("Report generated");
+
+    } catch (err) {
+      showToast.error("Failed to generate report");
     }
+
+    setIsGenerating(false);
   };
 
-  const handleDownloadReport = (report: typeof RECENT_REPORTS[0]) => {
-    // Simulate downloading a previously generated report
-    const content = `Sample report: ${report.name}\nGenerated on: ${report.date}\nBy: ${report.user}`;
-    const blob = new Blob([content], { type: 'text/plain' });
+  const handleDownloadReport = async (report: any) => {
+    const token = localStorage.getItem("access_token");
+
+    const res = await fetch(
+      `https://saferide-l724.onrender.com/api/reports/download/${report.id}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+
+    const a = document.createElement("a");
     a.href = url;
     a.download = report.name;
     a.click();
+
     window.URL.revokeObjectURL(url);
-    
+
     showToast.success(`Downloading ${report.name}`);
   };
 
-  const handleDeleteReport = (reportId: number) => {
-    setRecentReports(recentReports.filter(r => r.id !== reportId));
-    showToast.success('Report deleted');
+  const handleDeleteReport = async (reportId: string) => {
+    const token = localStorage.getItem("access_token");
+    const res = await fetch(`https://saferide-l724.onrender.com/api/reports/${reportId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      setRecentReports(prev => prev.filter(r => r.id !== reportId));
+      showToast.success("Report deleted");
+    } else {
+      showToast.error("Failed to delete report");
+    }
   };
 
   return (
@@ -475,7 +289,7 @@ export function Reports() {
                       </div>
                       <div>
                         <div className="text-sm font-medium text-slate-200">{report.name}</div>
-                        <div className="text-xs text-slate-500">Generated by {report.user} • {report.size}</div>
+                        <div className="text-xs text-slate-500">Generated by {report.user} • {report.size} • {new Date(report.date).toLocaleString()}</div>
                       </div>
                    </div>
                    <div className="flex items-center gap-2">
