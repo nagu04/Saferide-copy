@@ -562,8 +562,8 @@ async def generate_report(
     type: str = "Violation Summary (Daily)",
     current_user: User = Depends(get_current_user)
 ):
-    start_date = datetime.fromisoformat(start + "T00:00:00").replace(tzinfo=timezone.utc)
-    end_date = datetime.fromisoformat(end + "T23:59:59").replace(tzinfo=timezone.utc)
+    start_date = datetime.fromisoformat(start + "T00:00:00")
+    end_date = datetime.fromisoformat(end + "T23:59:59")
 
     # FILTER VIOLATIONS
     filtered = []
