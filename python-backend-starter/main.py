@@ -562,11 +562,11 @@ async def generate_report(
     type: str = "Violation Summary (Daily)",
     current_user: User = Depends(get_current_user)
 ):
-    start_date = datetime.fromisoformat(start + "T00:00:00")
-    end_date = datetime.fromisoformat(end + "T23:59:59")
+    start_date = datetime.fromisoformat(start + "T00:00:00").replace(tzinfo=timezone.utc)
+    end_date = datetime.fromisoformat(end + "T23:59:59").replace(tzinfo=timezone.utc)
 
     # FILTER VIOLATIONS
-    filtered = []
+    filtered = MOCK_VIOLATIONS
     for v in MOCK_VIOLATIONS:
         v_time = datetime.fromisoformat(v["timestamp"])
         if start_date <= v_time <= end_date:
@@ -614,15 +614,19 @@ async def generate_report(
 
         for v in filtered:
             for d in v["detections"]:
-                writer.writerow([
-                    v["id"],
-                    v["timestamp"],
-                    v["location"],
-                    v["camera_id"],
-                    d["type"],
-                    d["confidence"],
-                    v["status"]
-                ])
+                if not v["detections"]:
+                    writer.writerow([
+                        v["id"],
+                        v["timestamp"],
+                        v["location"],
+                        v["camera_id"],
+                        "N/A",
+                        "N/A",
+                        v["status"]
+                    ])
+        print("TOTAL VIOLATIONS:", len(MOCK_VIOLATIONS))
+        print("FILTERED:", len(filtered))
+        print("START:", start_date, "END:", end_date)
 
         output.seek(0)
         return StreamingResponse(
@@ -649,16 +653,19 @@ async def generate_report(
 
         for v in filtered:
             for d in v["detections"]:
-                ws.append([
-                    v["id"],
-                    v["timestamp"],
-                    v["location"],
-                    v["camera_id"],
-                    d["type"],
-                    d["confidence"],
-                    v["status"]
-                ])
-
+                if not v["detections"]:
+                    writer.writerow([
+                        v["id"],
+                        v["timestamp"],
+                        v["location"],
+                        v["camera_id"],
+                        "N/A",
+                        "N/A",
+                        v["status"]
+                    ])
+        print("TOTAL VIOLATIONS:", len(MOCK_VIOLATIONS))
+        print("FILTERED:", len(filtered))
+        print("START:", start_date, "END:", end_date)
         stream = BytesIO()
         wb.save(stream)
         stream.seek(0)
@@ -680,6 +687,8 @@ async def generate_report(
         p.drawString(50, y, f"Date Range: {start} to {end}")
         y -= 30
 
+        
+
         for v in filtered:
             for d in v["detections"]:
                 text = f"{v['timestamp']} | {v['location']} | {d['type']} | {v['status']}"
@@ -691,6 +700,9 @@ async def generate_report(
 
         p.save()
         buffer.seek(0)
+        print("TOTAL VIOLATIONS:", len(MOCK_VIOLATIONS))
+        print("FILTERED:", len(filtered))
+        print("START:", start_date, "END:", end_date)
 
         return StreamingResponse(
             buffer,
