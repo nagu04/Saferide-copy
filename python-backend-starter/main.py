@@ -380,7 +380,7 @@ async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
         1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "no_helmet"
     )
     plate_count = sum(
-        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d.get("plate_number")
+        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "no_plate"
     )
     overloading_count = sum(
         1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "overloading"
@@ -416,21 +416,36 @@ async def get_audit_logs(current_user: User = Depends(get_current_user)):
 
 @app.get("/api/dashboard/trends")
 async def get_trends(hours: int = 6, current_user: User = Depends(get_current_user)):
-    """
-    Return mock trend data for the past `hours`.
-    Each entry represents a timestamp and number of violations detected.
-    """
     now = datetime.utcnow()
     trends = []
+
     for i in range(hours):
+        start_time = now - timedelta(hours=i+1)
+        end_time = now - timedelta(hours=i)
+
+        helmet = 0
+        plate = 0
+        overload = 0
+
+        for v in MOCK_VIOLATIONS:
+            v_time = datetime.fromisoformat(v["timestamp"])
+            if start_time <= v_time <= end_time:
+                for d in v["detections"]:
+                    if d["type"] == "no_helmet":
+                        helmet += 1
+                    elif d["type"] == "no_plate":
+                        plate += 1
+                    elif d["type"] == "overloading":
+                        overload += 1
+
         trends.append({
-            "timestamp": (now - timedelta(hours=i)).isoformat(),
-            "total_violations": randint(0, 5),
-            "helmet_violations": randint(0, 3),
-            "plate_violations": randint(0, 2),
-            "overloading_violations": randint(0, 1)
+            "timestamp": end_time.isoformat(),
+            "helmet_violations": helmet,
+            "plate_violations": plate,
+            "overloading_violations": overload
         })
-    return list(reversed(trends))  # oldest first
+
+    return list(reversed(trends))
 
 @app.delete("/api/violations/{violation_id}")
 async def delete_violation(
