@@ -14,7 +14,6 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-
 export function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'live' | 'analytics'>('live');
@@ -59,10 +58,6 @@ export function Dashboard() {
       setRecentViolations(prev =>
         prev.map(v => (v.id === updated.id ? { ...v, ...updated } : v))
       );
-    }
-
-    if (message.type === 'stats_update') {
-      loadStats();
     }
 
     if (message.type === 'system_status') {

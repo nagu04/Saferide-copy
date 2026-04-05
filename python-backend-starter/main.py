@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse, FileResponse
 from io import BytesIO, StringIO
 from pydantic import BaseModel
 from typing import List, Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from random import randint, uniform
 from passlib.context import CryptContext
 from reportlab.lib.pagesizes import letter
@@ -103,7 +103,7 @@ MOCK_USER = {
     "email": "admin@saferide.gov.ph",
     "role": "admin",
     "full_name": "Admin User",
-    "created_at": datetime.now().isoformat(),
+    "created_at": datetime.now(timezone.utc).isoformat(),
     "is_active": True
 }
 
@@ -124,7 +124,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -141,13 +141,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     
 async def add_audit_log(action, user="system", details="", log_type="system", ip="unknown"):
     log = {
-        "id": f"LOG-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+        "id": f"LOG-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
         "action": action,
         "user": user,
         "details": details,
         "type": log_type,
         "ip": ip,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
     MOCK_AUDIT_LOGS.insert(0, log)
@@ -232,8 +232,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.close(code=1008)
 
             elif data.get("type") == "subscribe":
-                if authenticated:
-                    await manager.subscribe(websocket, data["incident_id"])
+                if not authenticated:
+                    await websocket.close(code=1008)
+                    return
 
             elif data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
@@ -267,8 +268,8 @@ async def get_violation_by_id(violation_id: str):
 @app.post("/api/detections")
 async def receive_detection(data: dict):
     violation = {
-        "id": f"VIO-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
-        "timestamp": data.get("timestamp", datetime.now().isoformat()),
+        "id": f"VIO-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
+        "timestamp": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
         "location": data.get("location", "Unknown"),
         "camera_id": data.get("camera_id"),
         "context": data.get("context", {}),
@@ -344,7 +345,7 @@ async def decide_violation(
 
     violation["reviewer_note"] = decision.reviewerNote
     violation["reviewed_by"] = current_user.full_name
-    violation["reviewed_at"] = datetime.now().isoformat()
+    violation["reviewed_at"] = datetime.now(timezone.utc).isoformat()
 
     # IMPORTANT CHANGE HERE
     await manager.broadcast_all({
@@ -413,7 +414,7 @@ async def get_audit_logs(current_user: User = Depends(get_current_user)):
 
 @app.get("/api/dashboard/trends")
 async def get_trends(hours: int = 6, current_user: User = Depends(get_current_user)):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     trends = []
 
     for i in range(hours):
@@ -530,7 +531,7 @@ async def bulk_review_violations(
                 v["status"] = "pending"
 
             v["reviewed_by"] = current_user.full_name
-            v["reviewed_at"] = datetime.now().isoformat()
+            v["reviewed_at"] = datetime.now(timezone.utc).isoformat()
             updated_ids.append(v["id"])
 
             # broadcast each update
@@ -575,10 +576,10 @@ async def generate_report(
 
     # SAVE REPORT INFO
     report = {
-        "id": f"REP-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "id": f"REP-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "name": filename,
         "user": current_user.full_name,
-        "date": datetime.now().isoformat(),
+        "date": datetime.now(timezone.utc).isoformat(),
         "size": f"{len(filtered)} records"
     }
 
