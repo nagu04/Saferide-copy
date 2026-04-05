@@ -13,3 +13,5 @@ opencv-python-headless==4.9.0.80
 cryptography==46.0.5
 bcrypt==4.0.1
 greenlet==3.3.2
+reportlab==4.0.0
+openpyxl==3.2.2
