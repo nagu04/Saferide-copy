@@ -613,16 +613,27 @@ async def generate_report(
         ])
 
         for v in filtered:
-            for d in v["detections"]:
+            if not v["detections"]:
                 writer.writerow([
                     v["id"],
                     v["timestamp"],
                     v["location"],
                     v["camera_id"],
-                    d["type"],
-                    d["confidence"],
+                    "N/A",
+                    "N/A",
                     v["status"]
                 ])
+            else:
+                for d in v["detections"]:
+                    writer.writerow([
+                        v["id"],
+                        v["timestamp"],
+                        v["location"],
+                        v["camera_id"],
+                        d["type"],
+                        d["confidence"],
+                        v["status"]
+                    ])
 
         output.seek(0)
         return StreamingResponse(
@@ -648,16 +659,27 @@ async def generate_report(
         ])
 
         for v in filtered:
-            for d in v["detections"]:
+            if not v["detections"]:
                 ws.append([
                     v["id"],
                     v["timestamp"],
                     v["location"],
                     v["camera_id"],
-                    d["type"],
-                    d["confidence"],
+                    "N/A",
+                    "N/A",
                     v["status"]
                 ])
+            else:
+                for d in v["detections"]:
+                    ws.append([
+                        v["id"],
+                        v["timestamp"],
+                        v["location"],
+                        v["camera_id"],
+                        d["type"],
+                        d["confidence"],
+                        v["status"]
+                    ])
 
         stream = BytesIO()
         wb.save(stream)
