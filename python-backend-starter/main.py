@@ -561,8 +561,8 @@ async def generate_report(
     type: str = "Violation Summary (Daily)",
     current_user: User = Depends(get_current_user)
 ):
-    start_date = datetime.fromisoformat(start)
-    end_date = datetime.fromisoformat(end)
+    start_date = datetime.fromisoformat(start + "T00:00:00")
+    end_date = datetime.fromisoformat(end + "T23:59:59")
 
     # FILTER VIOLATIONS
     filtered = []
@@ -572,6 +572,29 @@ async def generate_report(
             filtered.append(v)
 
     filename = f"Report_{start}_{end}.{format}"
+
+    # SAVE REPORT INFO
+    report = {
+        "id": f"REP-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "name": filename,
+        "user": current_user.full_name,
+        "date": datetime.now().isoformat(),
+        "size": f"{len(filtered)} records"
+    }
+
+    MOCK_REPORTS.insert(0, report)
+
+    await manager.broadcast_all({
+        "type": "new_report",
+        "data": report
+    })
+
+    await add_audit_log(
+        action="GENERATE REPORT",
+        user=current_user.full_name,
+        details=f"Generated report {filename}",
+        log_type="report"
+    )
 
     # ================= CSV =================
     if format == "csv":
@@ -651,7 +674,7 @@ async def generate_report(
         p = canvas.Canvas(buffer, pagesize=letter)
         y = 750
 
-        p.drawString(50, y, f"Violation Report")
+        p.drawString(50, y, "Violation Report")
         y -= 20
         p.drawString(50, y, f"Date Range: {start} to {end}")
         y -= 30
