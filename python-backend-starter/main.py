@@ -562,8 +562,8 @@ async def generate_report(
     type: str = "Violation Summary (Daily)",
     current_user: User = Depends(get_current_user)
 ):
-    start_date = datetime.fromisoformat(start + "T00:00:00")
-    end_date = datetime.fromisoformat(end + "T23:59:59")
+    start_date = datetime.fromisoformat(start + "T00:00:00").replace(tzinfo=timezone.utc)
+    end_date = datetime.fromisoformat(end + "T23:59:59").replace(tzinfo=timezone.utc)
 
     # FILTER VIOLATIONS
     filtered = []
@@ -613,27 +613,16 @@ async def generate_report(
         ])
 
         for v in filtered:
-            if not v["detections"]:
+            for d in v["detections"]:
                 writer.writerow([
                     v["id"],
                     v["timestamp"],
                     v["location"],
                     v["camera_id"],
-                    "N/A",
-                    "N/A",
+                    d["type"],
+                    d["confidence"],
                     v["status"]
                 ])
-            else:
-                for d in v["detections"]:
-                    writer.writerow([
-                        v["id"],
-                        v["timestamp"],
-                        v["location"],
-                        v["camera_id"],
-                        d["type"],
-                        d["confidence"],
-                        v["status"]
-                    ])
 
         output.seek(0)
         return StreamingResponse(
@@ -659,27 +648,16 @@ async def generate_report(
         ])
 
         for v in filtered:
-            if not v["detections"]:
+            for d in v["detections"]:
                 ws.append([
                     v["id"],
                     v["timestamp"],
                     v["location"],
                     v["camera_id"],
-                    "N/A",
-                    "N/A",
+                    d["type"],
+                    d["confidence"],
                     v["status"]
                 ])
-            else:
-                for d in v["detections"]:
-                    ws.append([
-                        v["id"],
-                        v["timestamp"],
-                        v["location"],
-                        v["camera_id"],
-                        d["type"],
-                        d["confidence"],
-                        v["status"]
-                    ])
 
         stream = BytesIO()
         wb.save(stream)
