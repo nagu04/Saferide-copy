@@ -6,7 +6,7 @@ CREATE TABLE admin_users (
     role VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
--- @block
+
 CREATE TABLE cameras (
     id INT AUTO_INCREMENT PRIMARY KEY,
     camera_code VARCHAR(20),
@@ -15,7 +15,6 @@ CREATE TABLE cameras (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- @block
 CREATE TABLE incidents (
     id VARCHAR(50) PRIMARY KEY,
     camera_id INT,
@@ -28,7 +27,6 @@ CREATE TABLE incidents (
     reviewed_at DATETIME
 );
 
--- @block
 CREATE TABLE detections (
     id INT AUTO_INCREMENT PRIMARY KEY,
     incident_id VARCHAR(50),
@@ -40,7 +38,6 @@ CREATE TABLE detections (
     FOREIGN KEY (incident_id) REFERENCES incidents(id)
 );
 
--- @block
 
 CREATE TABLE incident_reviews (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -71,7 +68,6 @@ CREATE TABLE reports (
     FOREIGN KEY (generated_by) REFERENCES admin_users(id)
 );
 
--- @block
 INSERT INTO admin_users (username, email, password_hash, role)
 VALUES (
     'admin',
@@ -80,6 +76,6 @@ VALUES (
     'admin'
 );
 
--- @block
+
 INSERT INTO cameras (camera_code, location, status)
 VALUES ('CAM-001', 'Gate 1', 'online');
