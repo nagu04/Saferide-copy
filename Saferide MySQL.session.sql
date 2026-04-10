@@ -79,3 +79,14 @@ VALUES (
 
 INSERT INTO cameras (camera_code, location, status)
 VALUES ('CAM-001', 'Gate 1', 'online');
+
+-- @block
+INSERT INTO admin_users (id, username, email, password_hash, role, created_at)
+VALUES (
+  '3',
+  'admin2',
+  'admin@test.com',
+  '$2b$12$OB8lcxg0SFS6oB2ags2JeebuLvjZv1voTn0vE89gyVGQesBMFg2U',
+  'admin',
+  '2026-04-07 23:24:41'
+);

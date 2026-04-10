@@ -225,6 +225,24 @@ async def add_audit_log(action, user="system", details="", log_type="system", ip
 def startup():
     Base.metadata.create_all(bind=engine)
 
+@app.post("/seed-admin")
+def seed_admin(db: Session = Depends(get_db)):
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    hashed = pwd_context.hash("admin123")
+
+    user = AdminUser(
+        username="admin",
+        email="admin@test.com",
+        password_hash=hashed,
+        role="admin"
+    )
+
+    db.add(user)
+    db.commit()
+
+    return {"message": "admin created"}
+
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(AdminUser).filter(AdminUser.username == credentials.username).first()
@@ -265,9 +283,11 @@ class ConnectionManager:
         self.subscribers: Dict[str, List[WebSocket]] = {}  # incident_id -> list of websockets
 
     def __del__(self):
-        if self.cap.isOpened():
-            self.cap.release()
-
+        try:
+            if hasattr(self, "cap") and self.cap.isOpened():
+                self.cap.release()
+        except:
+            pass
     async def connect(self, websocket):
         await websocket.accept()
         self.active_connections.append(websocket)
