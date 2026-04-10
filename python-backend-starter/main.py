@@ -7,14 +7,14 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Session
-from .database import Base, engine, get_db
+from .database import Base, engine, get_db, SessionLocal
 from datetime import datetime, timedelta, timezone
 from random import randint, uniform
 from passlib.context import CryptContext
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
-from jwt import PyJWTError
+from jwt import InvalidTokenError
 import cv2, csv, threading, queue, jwt, secrets
 import numpy as np
 import time, os
@@ -190,7 +190,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             created_at=user.created_at.isoformat(),
             is_active=True
         )
-    except PyJWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
     
 async def add_audit_log(action, user="system", details="", log_type="system", ip="unknown", db: Session = None):
@@ -225,31 +225,32 @@ async def add_audit_log(action, user="system", details="", log_type="system", ip
 def startup():
     Base.metadata.create_all(bind=engine)
 
-@app.post("/seed-admin")
-def seed_admin(db: Session = Depends(get_db)):
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    from sqlalchemy.orm import Session
+    db: Session = SessionLocal()
 
-    hashed = pwd_context.hash("admin123")
+    try:
+        # Check if admin already exists
+        existing = db.query(AdminUser).filter(AdminUser.username == "admin").first()
 
-    user = AdminUser(
-        id = Column(Integer, primary_key=True, index=True),
-        username="admin",
-        email="admin@test.com",
-        password_hash=hashed,
-        role="admin",
-        created_at=datetime.now(timezone.utc)
-    )
+        if not existing:
+            hashed = pwd_context.hash("admin123")
 
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+            user = AdminUser(
+                username="admin",
+                email="admin@test.com",
+                password_hash=hashed,
+                role="admin",
+                created_at = datetime.now(timezone.utc)
+            )
 
-    return {
-        "message": "admin created",
-        "id": user.id,
-        "created_at": user.created_at
-    }
+            db.add(user)
+            db.commit()
+            print("✅ Admin user seeded")
+        else:
+            print("⚠️ Admin already exists")
 
+    finally:
+        db.close()
 
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
@@ -290,12 +291,12 @@ class ConnectionManager:
         self.active_connections: List[WebSocket] = []
         self.subscribers: Dict[str, List[WebSocket]] = {}  # incident_id -> list of websockets
 
-    def __del__(self):
-        try:
-            if hasattr(self, "cap") and self.cap.isOpened():
-                self.cap.release()
-        except:
-            pass
+    #def __del__(self):
+     #   try:
+       #     if hasattr(self, "cap") and self.cap.isOpened():
+          #      self.cap.release()
+      #  except:
+        #    pass
     async def connect(self, websocket):
         await websocket.accept()
         self.active_connections.append(websocket)
@@ -514,7 +515,7 @@ async def decide_violation(
     db.refresh(incident)
 
     # IMPORTANT CHANGE HERE
-    await manager.broadcast_all(incident.id, {
+    await manager.broadcast_all({
         "type": "update_violation",
         "data": {
             "id": incident.id,
