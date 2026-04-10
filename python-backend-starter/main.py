@@ -242,10 +242,10 @@ async def global_exception_handler(request, exc):
     import traceback
     print("ERROR:", exc)
     print(traceback.format_exc())
-
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc)}
+        content={"detail": str(exc)},
+        headers={"Access-Control-Allow-Origin": "https://saferide-system.web.app"},
     )
 
 @app.on_event("startup")
@@ -665,13 +665,14 @@ async def get_trends(
         overload = 0
 
         for v in incidents:
-            if start_time <= v.timestamp <= end_time:
-                if v.violation_type == "no_helmet":
-                    helmet += 1
-                elif v.violation_type == "no_plate":
-                    plate += 1
-                elif v.violation_type == "overloading":
-                    overload += 1
+                ts = v.timestamp.replace(tzinfo=timezone.utc) if v.timestamp.tzinfo is None else v.timestamp
+                if start_time <= ts <= end_time:
+                    if v.violation_type == "no_helmet":
+                        helmet += 1
+                    elif v.violation_type == "no_plate":
+                        plate += 1
+                    elif v.violation_type == "overloading":
+                        overload += 1
 
         trends.append({
             "timestamp": end_time.isoformat(),
@@ -830,15 +831,15 @@ async def generate_report(
 
     filtered = [
         v for v in incidents
-        if start_date <= v.timestamp <= end_date
+        if start_date <= (v.timestamp.replace(tzinfo=timezone.utc) if v.timestamp.tzinfo is None else v.timestamp) <= end_date
     ]
 
     report_id = f"REP-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
     filename = f"{report_id}.{format}"
 
     # ✅ CREATE REPORTS FOLDER
-    os.makedirs("reports", exist_ok=True)
-    file_path = f"reports/{filename}"
+   # os.makedirs("reports", exist_ok=True)
+    #file_path = f"reports/{filename}"
 
     # ================= CSV =================
     if format == "csv":
@@ -867,8 +868,8 @@ async def generate_report(
             ])
 
         # ✅ SAVE FILE
-        with open(file_path, "w", newline="", encoding="utf-8") as f:
-            f.write(output.getvalue())
+       # with open(file_path, "w", newline="", encoding="utf-8") as f:
+       #     f.write(output.getvalue())
 
         output.seek(0)
 
@@ -906,7 +907,7 @@ async def generate_report(
             ])
 
         # ✅ SAVE FILE
-        wb.save(file_path)
+        #wb.save(file_path)
 
         stream = BytesIO()
         wb.save(stream)
@@ -941,8 +942,8 @@ async def generate_report(
         p.save()
 
         # ✅ SAVE FILE
-        with open(file_path, "wb") as f:
-            f.write(buffer.getvalue())
+       # with open(file_path, "wb") as f:
+       #     f.write(buffer.getvalue())
 
         buffer.seek(0)
 
@@ -1041,16 +1042,73 @@ async def download_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    file_path = f"reports/{report.id}.{report.format}"
+    incidents = db.query(Incident).all()
+    # Parse date range from report name: REP-YYYYMMDDHHMMSS...
+    # Since we don't store start/end, return all records for this report's date
+    report_date = report.date.replace(tzinfo=timezone.utc) if report.date.tzinfo is None else report.date
+    start_date = report_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_date = report_date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File missing on server")
+    filtered = [
+        v for v in incidents
+        if start_date <= (v.timestamp.replace(tzinfo=timezone.utc) if v.timestamp.tzinfo is None else v.timestamp) <= end_date
+    ]
+    fmt = report.format
 
-    return FileResponse(
-        file_path,
-        media_type="application/octet-stream",
-        filename=report.name
-    )
+    if not fmt:
+        if report.name.endswith(".pdf"):
+            fmt = "pdf"
+        elif report.name.endswith(".xlsx"):
+            fmt = "xlsx"
+        elif report.name.endswith(".csv"):
+            fmt = "csv"
+        else:
+            raise HTTPException(status_code=400, detail="Cannot determine report format")
+
+    if fmt == "csv":
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Violation ID", "Timestamp", "Location", "Camera", "Violation Type", "Confidence", "Status"])
+        for v in filtered:
+            writer.writerow([v.id, v.timestamp.isoformat(), v.location, v.camera_id, v.violation_type, 0.9, v.status])
+        output.seek(0)
+        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={report.name}"})
+
+    elif fmt == "xlsx":
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Violation ID", "Timestamp", "Location", "Camera", "Violation Type", "Confidence", "Status"])
+        for v in filtered:
+            ws.append([v.id, v.timestamp.isoformat(), v.location, v.camera_id, v.violation_type, 0.9, v.status])
+        stream = BytesIO()
+        wb.save(stream)
+        stream.seek(0)
+        return StreamingResponse(stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={report.name}"})
+
+    elif fmt == "pdf":
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        y = 750
+        p.drawString(50, y, "Violation Report")
+        y -= 20
+        p.drawString(50, y, f"Report ID: {report_id}")
+        y -= 30
+        for v in filtered:
+            text = f"{v.timestamp.isoformat()} | {v.location} | {v.violation_type} | {v.status}"
+            p.drawString(50, y, text)
+            y -= 15
+            if y < 50:
+                p.showPage()
+                y = 750
+        p.save()
+        buffer.seek(0)
+        return StreamingResponse(buffer, media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={report.name}"})
+
+    raise HTTPException(status_code=400, detail="Invalid format")
 # ==================== Camera RTSP Streaming ====================
 
 camera_streams: Dict[str, "FFMpegCameraStream"] = {}
