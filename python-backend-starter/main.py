@@ -232,16 +232,24 @@ def seed_admin(db: Session = Depends(get_db)):
     hashed = pwd_context.hash("admin123")
 
     user = AdminUser(
+        id = Column(Integer, primary_key=True, index=True),
         username="admin",
         email="admin@test.com",
         password_hash=hashed,
-        role="admin"
+        role="admin",
+        created_at=datetime.now(timezone.utc)
     )
 
     db.add(user)
     db.commit()
+    db.refresh(user)
 
-    return {"message": "admin created"}
+    return {
+        "message": "admin created",
+        "id": user.id,
+        "created_at": user.created_at
+    }
+
 
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
