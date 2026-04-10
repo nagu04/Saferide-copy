@@ -41,10 +41,7 @@ FRONTEND_URLS = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://saferide-system.web.app",
-        "http://localhost:5173"
-    ],
+    allow_origins=FRONTEND_URLS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -148,8 +145,9 @@ class Report(Base):
     id = Column(String(50), primary_key=True)
     name = Column(String(255))
     user = Column(String(100))
-    date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    date = Column(DateTime)
     size = Column(String(50))
+    format = Column(String(10))  # 👈 ADD THIS
 
 class CameraResponse(BaseModel):
     id: int
@@ -776,19 +774,27 @@ async def bulk_review_violations(
 
     return {"status": "updated", "count": len(updated_ids)}
 
+
+
 @app.get("/api/reports/generate")
 async def generate_report(
     start: str,
     end: str,
     format: str = "pdf",
-    type: str = "Violation Summary (Daily)",
+    report_type: str = "Violation Summary (Daily)",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    start_date = datetime.fromisoformat(start + "T00:00:00").replace(tzinfo=timezone.utc)
-    end_date = datetime.fromisoformat(end + "T23:59:59").replace(tzinfo=timezone.utc)
+    try:
+        start_date = datetime.fromisoformat(start).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+        )
+        end_date = datetime.fromisoformat(end).replace(
+            hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
 
-    # FILTER VIOLATIONS
     incidents = db.query(Incident).all()
 
     filtered = [
@@ -796,40 +802,12 @@ async def generate_report(
         if start_date <= v.timestamp <= end_date
     ]
 
-    filename = f"Report_{start}_{end}.{format}"
+    report_id = f"REP-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    filename = f"{report_id}.{format}"
 
-    # SAVE REPORT INFO
-    report = {
-        "id": f"REP-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-        "name": filename,
-        "user": current_user.full_name,
-        "date": datetime.now(timezone.utc).isoformat(),
-        "size": f"{len(filtered)} records"
-    }
-
-    db_report = Report(
-        id=report["id"],
-        name=report["name"],
-        user=report["user"],
-        date=datetime.now(timezone.utc),
-        size=report["size"]
-    )
-
-    db.add(db_report)
-    db.commit()
-
-    await manager.broadcast_all({
-        "type": "new_report",
-        "data": report
-    })
-
-    await add_audit_log(
-        action="GENERATE REPORT",
-        user=current_user.full_name,
-        details=f"Generated report {filename}",
-        log_type="report",
-        db=db
-    )
+    # ✅ CREATE REPORTS FOLDER
+    os.makedirs("reports", exist_ok=True)
+    file_path = f"reports/{filename}"
 
     # ================= CSV =================
     if format == "csv":
@@ -857,15 +835,20 @@ async def generate_report(
                 v.status
             ])
 
+        # ✅ SAVE FILE
+        with open(file_path, "w", newline="", encoding="utf-8") as f:
+            f.write(output.getvalue())
+
         output.seek(0)
-        return StreamingResponse(
+
+        response = StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
     # ================= XLSX =================
-    if format == "xlsx":
+    elif format == "xlsx":
         wb = Workbook()
         ws = wb.active
         ws.title = "Violations"
@@ -891,22 +874,25 @@ async def generate_report(
                 v.status
             ])
 
+        # ✅ SAVE FILE
+        wb.save(file_path)
+
         stream = BytesIO()
         wb.save(stream)
         stream.seek(0)
 
-        return StreamingResponse(
+        response = StreamingResponse(
             stream,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
     # ================= PDF =================
-    if format == "pdf":
+    elif format == "pdf":
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=letter)
-        y = 750
 
+        y = 750
         p.drawString(50, y, "Violation Report")
         y -= 20
         p.drawString(50, y, f"Date Range: {start} to {end}")
@@ -922,15 +908,47 @@ async def generate_report(
                 y = 750
 
         p.save()
+
+        # ✅ SAVE FILE
+        with open(file_path, "wb") as f:
+            f.write(buffer.getvalue())
+
         buffer.seek(0)
 
-        return StreamingResponse(
+        response = StreamingResponse(
             buffer,
             media_type="application/pdf",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
-    raise HTTPException(status_code=400, detail="Invalid format")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format")
+
+    # ================= SAVE DB RECORD =================
+    db_report = Report(
+        id=report_id,
+        name=filename,
+        user=current_user.full_name,
+        date=datetime.now(timezone.utc),
+        size=f"{len(filtered)} records",
+        format=format
+    )
+
+    db.add(db_report)
+    db.commit()
+
+    await manager.broadcast_all({
+        "type": "new_report",
+        "data": {
+            "id": report_id,
+            "name": filename,
+            "user": current_user.full_name,
+            "date": datetime.now(timezone.utc).isoformat(),
+            "size": f"{len(filtered)} records"
+        }
+    })
+
+    return response
 
 @app.get("/api/reports/recent")
 async def get_recent_reports(
@@ -991,14 +1009,15 @@ async def download_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    content = f"Report File: {report.name}\nGenerated by {report.user}"
-    file_bytes = content.encode("utf-8")
-    file_stream = BytesIO(file_bytes)
+    file_path = f"reports/{report.id}.{report.format}"
 
-    return StreamingResponse(
-        file_stream,
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File missing on server")
+
+    return FileResponse(
+        file_path,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={report.name}"}
+        filename=report.name
     )
 # ==================== Camera RTSP Streaming ====================
 
