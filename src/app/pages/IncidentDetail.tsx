@@ -41,7 +41,7 @@ export function IncidentDetail() {
 
     const fetchIncident = async () => {
       try {
-        const data = await api.violations.getById(id);
+        const data = await api.violations.getViolation(id);
 
         setIncident(data);
         setStatus(formatStatus(data.status));
