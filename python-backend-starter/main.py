@@ -232,9 +232,15 @@ async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(credentials.password, user.password_hash):
+    try:
+        valid = verify_password(credentials.password, user.password_hash)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted password hash in DB")
+
+    if not valid:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # ✅ MISSING PART (THIS IS THE FIX)
     access_token = create_access_token(data={"sub": str(user.id)})
 
     return LoginResponse(

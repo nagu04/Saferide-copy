@@ -1,4 +1,6 @@
 from passlib.context import CryptContext
 
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-print(pwd.hash("admin"))
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+hashed = pwd_context.hash("admin123")
+print(hashed)
