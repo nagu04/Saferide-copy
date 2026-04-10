@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import StreamingResponse, PlainTextResponse, FileResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse, FileResponse, JSONResponse
 from io import BytesIO, StringIO
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -15,6 +15,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
 from jwt import InvalidTokenError
+
+print("SafeRide API starting...")
 import cv2, csv, threading, queue, jwt, secrets
 import numpy as np
 import time, os
@@ -41,10 +43,14 @@ FRONTEND_URLS = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=FRONTEND_URLS,
+    allow_origins=[
+        "https://saferide-system.web.app",
+        "http://localhost:5173"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"]
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -191,8 +197,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             created_at=user.created_at.isoformat(),
             is_active=True
         )
-    except InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     
 async def add_audit_log(action, user="system", details="", log_type="system", ip="unknown", db: Session = None):
     log = AuditLog(
@@ -222,9 +228,21 @@ async def add_audit_log(action, user="system", details="", log_type="system", ip
     })
 
 # ==================== Authentication ====================
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)}
+    )
+
 @app.on_event("startup")
 def startup():
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("DB initialized")
+    except Exception as e:
+        print("Startup error:", e)
 
     from sqlalchemy.orm import Session
     db: Session = SessionLocal()

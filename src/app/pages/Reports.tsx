@@ -114,8 +114,10 @@ export function Reports() {
       const res = await fetch(
         `https://saferide-l724.onrender.com/api/reports/generate?start=${dates.start}&end=${dates.end}&format=${format}&report_type=${encodeURIComponent(reportType)}`,
         {
+          method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
+            Accept: "application/pdf" // optional but good
           }
         }
       );
