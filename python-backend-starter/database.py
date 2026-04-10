@@ -3,7 +3,10 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
 # LOCAL DATABASE (MySQL)
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:root123@localhost/saferide_db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise Exception("DATABASE URL not set")
 
 # Create the engine
 engine = create_engine(
