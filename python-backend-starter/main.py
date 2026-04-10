@@ -49,7 +49,7 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],  # keep this
     expose_headers=["Content-Disposition"]
 )
 
@@ -178,15 +178,21 @@ def create_access_token(data: dict) -> str:
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
 
         user = db.query(AdminUser).filter(AdminUser.id == int(user_id)).first()
 
         if not user:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="User not found")
 
         return User(
             id=str(user.id),
@@ -197,7 +203,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             created_at=user.created_at.isoformat(),
             is_active=True
         )
-    except Exception:
+
+    except Exception as e:
+        print("AUTH ERROR:", str(e))
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
 async def add_audit_log(action, user="system", details="", log_type="system", ip="unknown", db: Session = None):
@@ -231,6 +239,10 @@ async def add_audit_log(action, user="system", details="", log_type="system", ip
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
+    import traceback
+    print("ERROR:", exc)
+    print(traceback.format_exc())
+
     return JSONResponse(
         status_code=500,
         content={"detail": str(exc)}
@@ -807,11 +819,12 @@ async def generate_report(
         start_date = datetime.fromisoformat(start).replace(
             hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
         )
+
         end_date = datetime.fromisoformat(end).replace(
             hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
         )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date format")
 
     incidents = db.query(Incident).all()
 
@@ -974,6 +987,7 @@ async def get_recent_reports(
     db: Session = Depends(get_db)
 ):
     reports = db.query(Report)\
+        .filter(Report.user == current_user.full_name)\
         .order_by(Report.date.desc())\
         .limit(10)\
         .all()

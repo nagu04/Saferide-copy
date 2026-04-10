@@ -10,6 +10,7 @@ export function Reports() {
   const [customEndDate, setCustomEndDate] = useState('');
   const [reportType, setReportType] = useState('Violation Summary (Daily)');
   const [format, setFormat] = useState('pdf');
+  const [loadingReports, setLoadingReports] = useState(true);
   type Report = {
     id: string;
     name: string;
@@ -102,25 +103,34 @@ export function Reports() {
     const dates = getDateRange();
 
     if (!dates) {
-      showToast.error('Please select both start and end dates');
+      showToast.error("Please select both start and end dates");
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      showToast.error("Session expired. Please login again.");
       return;
     }
 
     setIsGenerating(true);
 
     try {
-      const token = localStorage.getItem("access_token");
-
       const res = await fetch(
         `https://saferide-l724.onrender.com/api/reports/generate?start=${dates.start}&end=${dates.end}&format=${format}&report_type=${encodeURIComponent(reportType)}`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/pdf" // optional but good
+            Authorization: "Bearer " + token,
+            Accept: "application/pdf"
           }
         }
       );
+
+      if (!res.ok) {
+        console.error("Failed to fetch reports");
+        return;
+      }
 
       const blob = await res.blob();
 
@@ -134,25 +144,30 @@ export function Reports() {
 
       window.URL.revokeObjectURL(url);
 
-      // 🔥 REFRESH RECENT REPORTS FROM BACKEND
-      const resRecent = await fetch("https://saferide-l724.onrender.com/api/reports/recent", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resRecent = await fetch(
+        "https://saferide-l724.onrender.com/api/reports/recent",
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
       const data = await resRecent.json();
       setRecentReports(data.reports || []);
 
       showToast.success("Report generated");
-
     } catch (err) {
+      console.error(err);
       showToast.error("Failed to generate report");
+    } finally {
+      setIsGenerating(false);
     }
-
-    setIsGenerating(false);
   };
 
   const handleDownloadReport = async (report: Report) => {
     const token = localStorage.getItem("access_token");
+
+    if (!token) {
+      showToast.error("Session expired. Please login again.");
+      return;
+    }
 
     const res = await fetch(
       `https://saferide-l724.onrender.com/api/reports/download/${report.id}`,
@@ -176,6 +191,10 @@ export function Reports() {
 
   const handleDeleteReport = async (reportId: string) => {
     const token = localStorage.getItem("access_token");
+    if (!token) {
+      showToast.error("Session expired. Please login again.");
+      return;
+    }
     const res = await fetch(`https://saferide-l724.onrender.com/api/reports/${reportId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
