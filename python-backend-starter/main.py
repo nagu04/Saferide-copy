@@ -5,20 +5,24 @@ from fastapi.responses import StreamingResponse, PlainTextResponse, FileResponse
 from io import BytesIO, StringIO
 from pydantic import BaseModel
 from typing import List, Optional, Dict
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy.orm import Session
+from .database import Base, engine, get_db
 from datetime import datetime, timedelta, timezone
 from random import randint, uniform
 from passlib.context import CryptContext
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
+from jwt import PyJWTError
 import cv2, csv, threading, queue, jwt, secrets
 import numpy as np
+import time, os
 
 print(secrets.token_hex(32))
-
 # ==================== Configuration ====================
 
-SECRET_KEY = "your-secret-key-change-this-in-production"
+SECRET_KEY = os.getenv("SECRET_KEY") or "dev-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
@@ -28,12 +32,16 @@ RTSP_URLS = {
 }
 
 # ==================== FastAPI App ====================
-
 app = FastAPI(title="SafeRide API", version="1.0.0")
+
+FRONTEND_URLS = [
+    "http://localhost:5173",                    # Dev
+    "https://saferide-system.web.app",                # Firebase Hosting
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=FRONTEND_URLS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,8 +49,6 @@ app.add_middleware(
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-
-
 
 # ==================== Models ====================
 
@@ -89,33 +95,69 @@ class DashboardStats(BaseModel):
     total_cameras: int
     average_confidence: float
 
-class Camera(BaseModel):
-    id: str
-    name: str
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class Camera(Base):
+    __tablename__ = "cameras"
+
+    id = Column(Integer, primary_key=True, index=True)
+    camera_code = Column(String(20), unique=True, nullable=False)
+    location = Column(String(100), nullable=False)
+    status = Column(String(20), default="offline")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id = Column(String(50), primary_key=True, index=True)
+    camera_id = Column(Integer, ForeignKey("cameras.id"))
+    location = Column(String(100))
+    violation_type = Column(String(50))
+    status = Column(String(20), default="pending")
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    image_url = Column(Text, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("admin_users.id"), nullable=True)
+    reviewer_note = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(String(50), primary_key=True, index=True)
+    action = Column(String(100))
+    user = Column(String(100))
+    details = Column(Text)
+    type = Column(String(50))
+    ip = Column(String(50))
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id = Column(String(50), primary_key=True)
+    name = Column(String(255))
+    user = Column(String(100))
+    date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    size = Column(String(50))
+
+class CameraResponse(BaseModel):
+    id: int
+    camera_code: str
     location: str
+    status: str
+
+    class Config:
+        orm_mode = True
 
 # ==================== Mock Database ====================
-
-MOCK_USER = {
-    "id": "user-001",
-    "username": "admin",
-    "password_hash": pwd_context.hash("admin"),
-    "email": "admin@saferide.gov.ph",
-    "role": "admin",
-    "full_name": "Admin User",
-    "created_at": datetime.now(timezone.utc).isoformat(),
-    "is_active": True
-}
-
-MOCK_VIOLATIONS = []
-
-MOCK_AUDIT_LOGS = []
-
-MOCK_REPORTS = []
-
-MOCK_CAMERAS = [
-    {"id": "CAM-001", "name": "Main Gate", "location": "Sucat Main Gate"},
-]
 
 # ==================== Helper Functions ====================
 
@@ -129,53 +171,96 @@ def create_access_token(data: dict) -> str:
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
-        if user_id == MOCK_USER["id"]:
-            return User(**{k: v for k, v in MOCK_USER.items() if k != "password_hash"})
-        raise HTTPException(status_code=401, detail="Invalid token")
-    except:
+
+        user = db.query(AdminUser).filter(AdminUser.id == int(user_id)).first()
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        return User(
+            id=str(user.id),
+            username=user.username,
+            email=user.email,
+            role=user.role,
+            full_name=user.username,
+            created_at=user.created_at.isoformat(),
+            is_active=True
+        )
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-async def add_audit_log(action, user="system", details="", log_type="system", ip="unknown"):
-    log = {
-        "id": f"LOG-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
-        "action": action,
-        "user": user,
-        "details": details,
-        "type": log_type,
-        "ip": ip,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
+async def add_audit_log(action, user="system", details="", log_type="system", ip="unknown", db: Session = None):
+    log = AuditLog(
+        id=f"LOG-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
+        action=action,
+        user=user,
+        details=details,
+        type=log_type,
+        ip=ip,
+        timestamp=datetime.now(timezone.utc)
+    )
 
-    MOCK_AUDIT_LOGS.insert(0, log)
+    if db:
+        db.add(log)
+        db.commit()
 
-    # realtime push to frontend
     await manager.broadcast_all({
         "type": "audit_log",
-        "data": log
+        "data": {
+            "id": log.id,
+            "action": log.action,
+            "user": log.user,
+            "details": log.details,
+            "type": log.type,
+            "timestamp": log.timestamp.isoformat()
+        }
     })
 
 # ==================== Authentication ====================
+@app.on_event("startup")
+def startup():
+    Base.metadata.create_all(bind=engine)
 
 @app.post("/api/auth/login", response_model=LoginResponse)
-async def login(credentials: LoginRequest):
-    if credentials.username != MOCK_USER["username"]:
+async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(AdminUser).filter(AdminUser.username == credentials.username).first()
+
+    if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not verify_password(credentials.password, MOCK_USER["password_hash"]):
+
+    if not verify_password(credentials.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    access_token = create_access_token(data={"sub": MOCK_USER["id"]})
-    user = User(**{k: v for k, v in MOCK_USER.items() if k != "password_hash"})
-    return LoginResponse(access_token=access_token, token_type="bearer", user=user)
+
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=User(
+            id=str(user.id),
+            username=user.username,
+            email=user.email,
+            role=user.role,
+            full_name=user.username,
+            created_at=user.created_at.isoformat(),
+            is_active=True
+        )
+    )
 
 # ==================== WebSocket Manager ====================
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections = []
-        self.subscribers = {}  # incident_id -> list of websockets
+        self.active_connections: List[WebSocket] = []
+        self.subscribers: Dict[str, List[WebSocket]] = {}  # incident_id -> list of websockets
+
+    def __del__(self):
+        if self.cap.isOpened():
+            self.cap.release()
 
     async def connect(self, websocket):
         await websocket.accept()
@@ -228,13 +313,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
                     authenticated = True
                     print("WS Authenticated:", payload.get("sub"))
+
+                    await websocket.send_json({
+                        "type": "auth_success"
+                    })
                 except:
                     await websocket.close(code=1008)
-
             elif data.get("type") == "subscribe":
                 if not authenticated:
                     await websocket.close(code=1008)
                     return
+
+                incident_id = data.get("incident_id")
+                await manager.subscribe(websocket, incident_id)
 
             elif data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
@@ -250,23 +341,47 @@ async def websocket_endpoint(websocket: WebSocket):
 # ==================== Violations ====================
 
 @app.get("/api/violations")
-async def get_violations(current_user: User = Depends(get_current_user)):
-    return {
-        "violations": MOCK_VIOLATIONS,
-        "total": len(MOCK_VIOLATIONS),
-        "page": 1,
-        "page_size": len(MOCK_VIOLATIONS)
-    }
+async def get_violations(db: Session = Depends(get_db)):
+    incidents = db.query(Incident).all()
+
+    return [
+        {
+            "id": i.id,
+            "location": i.location,
+            "violation_type": i.violation_type,
+            "status": i.status,
+            "timestamp": i.timestamp.isoformat()
+        }
+        for i in incidents
+    ]
 
 @app.get("/api/violations/{violation_id}")
-async def get_violation_by_id(violation_id: str):
-    for v in MOCK_VIOLATIONS:
-        if v["id"] == violation_id:
-            return v
-    raise HTTPException(status_code=404, detail="Violation not found")
+async def get_violation_by_id(violation_id: str, db: Session = Depends(get_db)):
+    incident = db.query(Incident).filter(Incident.id == violation_id).first()
+
+    if not incident:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    return {
+        "id": incident.id,
+        "timestamp": incident.timestamp.isoformat(),
+        "location": incident.location,
+        "camera_id": incident.camera_id,
+        "detections": [
+            {
+                "type": incident.violation_type,
+                "confidence": 0.9,
+                "image_url": incident.image_url
+            }
+        ],
+        "status": incident.status
+    }
 
 @app.post("/api/detections")
-async def receive_detection(data: dict):
+async def receive_detection(data: dict, db: Session = Depends(get_db)):
+
+    if not data.get("detections"):
+        raise HTTPException(status_code=400, detail="No detections provided")
     violation = {
         "id": f"VIO-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
         "timestamp": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
@@ -285,10 +400,27 @@ async def receive_detection(data: dict):
         ],
         "status": "pending"
     }
-    
-    global MOCK_VIOLATIONS
-    MOCK_VIOLATIONS.insert(0, violation)
-    MOCK_VIOLATIONS = MOCK_VIOLATIONS[:5000]
+    camera = db.query(Camera).filter(Camera.camera_code == violation["camera_id"]).first()
+    first_detection = violation["detections"][0] if violation["detections"] else None
+
+    try:
+        ts = datetime.fromisoformat(violation["timestamp"])
+    except ValueError:
+        ts = datetime.now(timezone.utc)
+
+    incident = Incident(
+        id=violation["id"],
+        camera_id=camera.id if camera else None,
+        location=violation["location"],
+        violation_type = first_detection["type"] if first_detection else "unknown",
+        status="pending",
+        timestamp=ts.astimezone(timezone.utc),
+        image_url=first_detection.get("image_url") if first_detection else None
+    )
+
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
     
     # 🔔 Real-time notification to subscribed clients
     await manager.broadcast_all({
@@ -300,12 +432,12 @@ async def receive_detection(data: dict):
         "type": "stats_update"
     })
     
-
     await add_audit_log(
         action="NEW VIOLATION DETECTED",
         user="AI System",
         details=f"Violation {violation['id']} detected at {violation['location']}",
-        log_type="system"
+        log_type="system",
+        db=db
     )
     
     return {"status": "received", "violation": violation}
@@ -316,41 +448,45 @@ class DecisionRequest(BaseModel):
     action: str
     reviewerNote: Optional[str] = None
 
-
 @app.post("/api/violations/{violation_id}/review")
 async def decide_violation(
     violation_id: str,
     decision: DecisionRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    violation = None
-    for v in MOCK_VIOLATIONS:
-        if v["id"] == violation_id:
-            violation = v
-            break
+   
+    incident = db.query(Incident).filter(Incident.id == violation_id).first()
 
-    if not violation:
+    if not incident:
         raise HTTPException(status_code=404, detail="Violation not found")
 
     if decision.action == "approve":
-        violation["status"] = "approved"
+        incident.status = "approved"
     elif decision.action == "reject":
-        violation["status"] = "rejected"
+        incident.status = "rejected"
     elif decision.action == "needsInfo":
-        violation["status"] = "needs_info"
+        incident.status = "needs_info"
     elif decision.action == "reopen":
-        violation["status"] = "pending"
+        incident.status = "pending"
     else:
         raise HTTPException(status_code=400, detail="Invalid action")
 
-    violation["reviewer_note"] = decision.reviewerNote
-    violation["reviewed_by"] = current_user.full_name
-    violation["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+    incident.reviewed_by = int(current_user.id)
+    incident.reviewer_note = decision.reviewerNote
+    incident.reviewed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(incident)
 
     # IMPORTANT CHANGE HERE
-    await manager.broadcast_all({
+    await manager.broadcast_all(incident.id, {
         "type": "update_violation",
-        "data": violation
+        "data": {
+            "id": incident.id,
+            "status": incident.status,
+            "reviewerNote": incident.reviewer_note
+        }
     })
 
     await manager.broadcast_all({
@@ -360,62 +496,99 @@ async def decide_violation(
     await add_audit_log(
         action=f"{decision.action.upper()} VIOLATION",
         user=current_user.full_name,
-        details=f"Violation {violation_id} marked as {violation['status']}",
-        log_type="record"
+        details=f"Violation {violation_id} marked as {incident.status}",
+        log_type="record",
+        db=db
     )
 
     return {
         "status": "success",
-        "violation": violation
+        "violation": {
+            "id": incident.id,
+            "status": incident.status
+        }
     }
-
 # ==================== Dashboard ====================
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
-async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
-    # Count violations by type dynamically
-    helmet_count = sum(
-        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "no_helmet"
-    )
-    plate_count = sum(
-        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "no_plate"
-    )
-    overloading_count = sum(
-        1 for v in MOCK_VIOLATIONS for d in v["detections"] if d["type"] == "overloading"
-    )
-    approved_count = sum(1 for v in MOCK_VIOLATIONS if v.get("status") == "approved")
-    rejected_count = sum(1 for v in MOCK_VIOLATIONS if v.get("status") == "rejected")
-    pending_count = sum(1 for v in MOCK_VIOLATIONS if v.get("status") == "pending")
-    avg_conf = (
-        sum(d["confidence"] for v in MOCK_VIOLATIONS for d in v["detections"]) /
-        max(1, sum(len(v["detections"]) for v in MOCK_VIOLATIONS))
-    )
-    
+async def get_dashboard_stats(db: Session = Depends(get_db)):
+    incidents = db.query(Incident).all()
+
+    helmet = sum(1 for i in incidents if i.violation_type == "no_helmet")
+    plate = sum(1 for i in incidents if i.violation_type == "no_plate")
+    overload = sum(1 for i in incidents if i.violation_type == "overloading")
+
+    approved = sum(1 for i in incidents if i.status == "approved")
+    rejected = sum(1 for i in incidents if i.status == "rejected")
+    pending = sum(1 for i in incidents if i.status == "pending")
+
+    today = datetime.now(timezone.utc).date()
+    total_today = sum(1 for i in incidents if i.timestamp.date() == today)
+
     return DashboardStats(
-        total_violations_today=len(MOCK_VIOLATIONS),
-        helmet_violations=helmet_count,
-        plate_violations=plate_count,
-        overloading_violations=overloading_count,
-        pending_review_count=pending_count,
-        approved_count=approved_count,
-        rejected_count=rejected_count,
-        active_cameras=len(MOCK_CAMERAS),
-        total_cameras=len(MOCK_CAMERAS),
-        average_confidence=round(avg_conf, 2)
+        total_violations_today= total_today,
+        helmet_violations=helmet,
+        plate_violations=plate,
+        overloading_violations=overload,
+        pending_review_count=pending,
+        approved_count=approved,
+        rejected_count=rejected,
+        active_cameras=len(RTSP_URLS),
+        total_cameras=len(RTSP_URLS),
+        average_confidence=0.9
     )
 
 @app.get("/api/dashboard/recent")
-async def get_recent_violations(limit: int = 10, current_user: User = Depends(get_current_user)):
-    return MOCK_VIOLATIONS[:limit]
+async def get_recent_violations(limit: int = 10, db: Session = Depends(get_db)):
+    incidents = db.query(Incident).order_by(Incident.timestamp.desc()).limit(limit).all()
+
+    return [
+        {
+            "id": i.id,
+            "timestamp": i.timestamp.isoformat(),
+            "location": i.location,
+            "camera_id": i.camera_id,
+            "detections": [
+                {
+                    "type": i.violation_type,
+                    "confidence": 0.9,
+                    "image_url": i.image_url
+                }
+            ],
+            "status": i.status
+        }
+        for i in incidents
+    ]
 
 @app.get("/api/audit/logs")
-async def get_audit_logs(current_user: User = Depends(get_current_user)):
-    return MOCK_AUDIT_LOGS
+async def get_audit_logs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(50).all()
+
+    return [
+        {
+            "id": l.id,
+            "action": l.action,
+            "user": l.user,
+            "details": l.details,
+            "type": l.type,
+            "timestamp": l.timestamp.isoformat()
+        }
+        for l in logs
+    ]
 
 @app.get("/api/dashboard/trends")
-async def get_trends(hours: int = 6, current_user: User = Depends(get_current_user)):
+async def get_trends(
+    hours: int = 6,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     now = datetime.now(timezone.utc)
     trends = []
+
+    incidents = db.query(Incident).all()
 
     for i in range(hours):
         start_time = now - timedelta(hours=i+1)
@@ -425,16 +598,14 @@ async def get_trends(hours: int = 6, current_user: User = Depends(get_current_us
         plate = 0
         overload = 0
 
-        for v in MOCK_VIOLATIONS:
-            v_time = datetime.fromisoformat(v["timestamp"])
-            if start_time <= v_time <= end_time:
-                for d in v["detections"]:
-                    if d["type"] == "no_helmet":
-                        helmet += 1
-                    elif d["type"] == "no_plate":
-                        plate += 1
-                    elif d["type"] == "overloading":
-                        overload += 1
+        for v in incidents:
+            if start_time <= v.timestamp <= end_time:
+                if v.violation_type == "no_helmet":
+                    helmet += 1
+                elif v.violation_type == "no_plate":
+                    plate += 1
+                elif v.violation_type == "overloading":
+                    overload += 1
 
         trends.append({
             "timestamp": end_time.isoformat(),
@@ -448,33 +619,31 @@ async def get_trends(hours: int = 6, current_user: User = Depends(get_current_us
 @app.delete("/api/violations/{violation_id}")
 async def delete_violation(
     violation_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    global MOCK_VIOLATIONS
+    incident = db.query(Incident).filter(Incident.id == violation_id).first()
 
-    before_count = len(MOCK_VIOLATIONS)
-    MOCK_VIOLATIONS = [v for v in MOCK_VIOLATIONS if v["id"] != violation_id]
-
-    if len(MOCK_VIOLATIONS) == before_count:
+    if not incident:
         raise HTTPException(status_code=404, detail="Violation not found")
+
+    db.delete(incident)
+    db.commit()
 
     await manager.broadcast_all({
         "type": "delete_violation",
         "id": violation_id
     })
 
-    await manager.broadcast_all({
-        "type": "stats_update"
-    })
-    
+    await manager.broadcast_all({"type": "stats_update"})
 
     await add_audit_log(
         action="DELETE VIOLATION",
         user=current_user.full_name,
         details=f"Violation {violation_id} deleted",
-        log_type="delete"
+        log_type="delete",
+        db=db
     )
-
     return {"status": "deleted"}
 
 class BulkDeleteRequest(BaseModel):
@@ -483,12 +652,19 @@ class BulkDeleteRequest(BaseModel):
 @app.post("/api/violations/bulk-delete")
 async def bulk_delete_violations(
     data: BulkDeleteRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    global MOCK_VIOLATIONS
 
-    deleted_ids = data.ids
-    MOCK_VIOLATIONS = [v for v in MOCK_VIOLATIONS if v["id"] not in deleted_ids]
+    deleted_ids = []
+
+    for vid in data.ids:
+        incident = db.query(Incident).filter(Incident.id == vid).first()
+        if incident:
+            db.delete(incident)
+            deleted_ids.append(vid)
+
+    db.commit()
 
     await manager.broadcast_all({
         "type": "bulk_delete",
@@ -503,7 +679,8 @@ async def bulk_delete_violations(
         action="BULK DELETE",
         user=current_user.full_name,
         details=f"Deleted {len(deleted_ids)} violations",
-        log_type="record"
+        log_type="record",
+        db=db
     )
 
     return {"status": "deleted", "count": len(deleted_ids)}
@@ -515,30 +692,37 @@ class BulkReviewRequest(BaseModel):
 @app.post("/api/violations/bulk-review")
 async def bulk_review_violations(
     data: BulkReviewRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     updated_ids = []
 
-    for v in MOCK_VIOLATIONS:
-        if v["id"] in data.ids:
+    for vid in data.ids:
+        incident = db.query(Incident).filter(Incident.id == vid).first()
+        
+        if incident:
             if data.action == "approve":
-                v["status"] = "approved"
+                incident.status = "approved"
             elif data.action == "reject":
-                v["status"] = "rejected"
+                incident.status = "rejected"
             elif data.action == "needsInfo":
-                v["status"] = "needs_info"
+                incident.status = "needs_info"
             elif data.action == "reopen":
-                v["status"] = "pending"
+                incident.status = "pending"
 
-            v["reviewed_by"] = current_user.full_name
-            v["reviewed_at"] = datetime.now(timezone.utc).isoformat()
-            updated_ids.append(v["id"])
+            incident.reviewed_by = int(current_user.id)
+            incident.reviewed_at = datetime.now(timezone.utc)
+            updated_ids.append(incident.id)
 
-            # broadcast each update
             await manager.broadcast_all({
                 "type": "update_violation",
-                "data": v
+                "data": {
+                    "id": incident.id,
+                    "status": incident.status
+                }
             })
+
+    db.commit()
 
     await manager.broadcast_all({
         "type": "stats_update"
@@ -548,11 +732,11 @@ async def bulk_review_violations(
         action="BULK REVIEW",
         user=current_user.full_name,
         details=f"{data.action} {len(updated_ids)} violations",
-        log_type="record"
+        log_type="record",
+        db=db
     )
 
     return {"status": "updated", "count": len(updated_ids)}
-
 
 @app.get("/api/reports/generate")
 async def generate_report(
@@ -560,17 +744,19 @@ async def generate_report(
     end: str,
     format: str = "pdf",
     type: str = "Violation Summary (Daily)",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     start_date = datetime.fromisoformat(start + "T00:00:00").replace(tzinfo=timezone.utc)
     end_date = datetime.fromisoformat(end + "T23:59:59").replace(tzinfo=timezone.utc)
 
     # FILTER VIOLATIONS
-    filtered = []
-    for v in MOCK_VIOLATIONS:
-        v_time = datetime.fromisoformat(v["timestamp"])
-        if start_date <= v_time <= end_date:
-            filtered.append(v)
+    incidents = db.query(Incident).all()
+
+    filtered = [
+        v for v in incidents
+        if start_date <= v.timestamp <= end_date
+    ]
 
     filename = f"Report_{start}_{end}.{format}"
 
@@ -583,7 +769,16 @@ async def generate_report(
         "size": f"{len(filtered)} records"
     }
 
-    MOCK_REPORTS.insert(0, report)
+    db_report = Report(
+        id=report["id"],
+        name=report["name"],
+        user=report["user"],
+        date=datetime.now(timezone.utc),
+        size=report["size"]
+    )
+
+    db.add(db_report)
+    db.commit()
 
     await manager.broadcast_all({
         "type": "new_report",
@@ -594,7 +789,8 @@ async def generate_report(
         action="GENERATE REPORT",
         user=current_user.full_name,
         details=f"Generated report {filename}",
-        log_type="report"
+        log_type="report",
+        db=db
     )
 
     # ================= CSV =================
@@ -613,16 +809,15 @@ async def generate_report(
         ])
 
         for v in filtered:
-            for d in v["detections"]:
-                writer.writerow([
-                    v["id"],
-                    v["timestamp"],
-                    v["location"],
-                    v["camera_id"],
-                    d["type"],
-                    d["confidence"],
-                    v["status"]
-                ])
+            writer.writerow([
+                v.id,
+                v.timestamp.isoformat(),
+                v.location,
+                v.camera_id,
+                v.violation_type,
+                0.9,
+                v.status
+            ])
 
         output.seek(0)
         return StreamingResponse(
@@ -648,16 +843,15 @@ async def generate_report(
         ])
 
         for v in filtered:
-            for d in v["detections"]:
-                ws.append([
-                    v["id"],
-                    v["timestamp"],
-                    v["location"],
-                    v["camera_id"],
-                    d["type"],
-                    d["confidence"],
-                    v["status"]
-                ])
+            ws.append([
+                v.id,
+                v.timestamp.isoformat(),
+                v.location,
+                v.camera_id,
+                v.violation_type,
+                0.9,
+                v.status
+            ])
 
         stream = BytesIO()
         wb.save(stream)
@@ -681,13 +875,13 @@ async def generate_report(
         y -= 30
 
         for v in filtered:
-            for d in v["detections"]:
-                text = f"{v['timestamp']} | {v['location']} | {d['type']} | {v['status']}"
-                p.drawString(50, y, text)
-                y -= 15
-                if y < 50:
-                    p.showPage()
-                    y = 750
+            text = f"{v.timestamp.isoformat()} | {v.location} | {v.violation_type} | {v.status}"
+            p.drawString(50, y, text)
+            y -= 15
+
+            if y < 50:
+                p.showPage()
+                y = 750
 
         p.save()
         buffer.seek(0)
@@ -700,40 +894,73 @@ async def generate_report(
 
     raise HTTPException(status_code=400, detail="Invalid format")
 
-
 @app.get("/api/reports/recent")
-async def get_recent_reports(current_user: User = Depends(get_current_user)):
-    return {"reports": MOCK_REPORTS[:10]}
+async def get_recent_reports(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    reports = db.query(Report)\
+        .order_by(Report.date.desc())\
+        .limit(10)\
+        .all()
 
+    return {
+        "reports": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "user": r.user,
+                "date": r.date.isoformat(),
+                "size": r.size
+            }
+            for r in reports
+        ]
+    }
 
 @app.delete("/api/reports/{report_id}")
-async def delete_report(report_id: str, current_user: User = Depends(get_current_user)):
-    global MOCK_REPORTS
-    MOCK_REPORTS = [r for r in MOCK_REPORTS if r["id"] != report_id]
+async def delete_report(
+    report_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    report = db.query(Report).filter(Report.id == report_id).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
 
     await add_audit_log(
         action="DELETE REPORT",
         user=current_user.full_name,
-        details=f"Report {report_id} deleted"
+        details=f"Report {report_id} deleted",
+        log_type="report",
+        db=db
     )
 
-    return {"status": "success"}
+    db.delete(report)
+    db.commit()
+
+    return {"status": "deleted"}
 
 @app.get("/api/reports/download/{report_id}")
-async def download_report(report_id: str, current_user: User = Depends(get_current_user)):
-    report = next((r for r in MOCK_REPORTS if r["id"] == report_id), None)
+async def download_report(
+    report_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    report = db.query(Report).filter(Report.id == report_id).first()
 
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    content = f"Report File: {report['name']}\nGenerated by {report['user']}"
+    content = f"Report File: {report.name}\nGenerated by {report.user}"
     file_bytes = content.encode("utf-8")
     file_stream = BytesIO(file_bytes)
 
     return StreamingResponse(
         file_stream,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={report['name']}"}
+        headers={"Content-Disposition": f"attachment; filename={report.name}"}
     )
 # ==================== Camera RTSP Streaming ====================
 
@@ -751,6 +978,10 @@ class FFMpegCameraStream:
         while True:
             ret, frame = self.cap.read()
             if not ret:
+                print(f"[WARN] Camera {self.url} disconnected. Reconnecting...")
+                self.cap.release()
+                time.sleep(1)
+                self.cap = cv2.VideoCapture(self.url)
                 continue
             # Encode frame as JPEG
             ret, buffer = cv2.imencode('.jpg', frame)
@@ -758,6 +989,8 @@ class FFMpegCameraStream:
                 if self.frame_queue.full():
                     self.frame_queue.get()
                 self.frame_queue.put(buffer.tobytes())
+            
+            time.sleep(0.03)
 
     def get_frame(self):
         try:
@@ -801,9 +1034,9 @@ def camera_feed(camera_id: str):
         media_type='multipart/x-mixed-replace; boundary=frame'
     )
 
-@app.get("/api/cameras", response_model=List[Camera])
-async def get_cameras(current_user: User = Depends(get_current_user)):
-    return MOCK_CAMERAS
+@app.get("/api/cameras", response_model=List[CameraResponse])
+async def get_cameras(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(Camera).all()
 
 @app.get("/api/cameras/status")
 async def camera_status():

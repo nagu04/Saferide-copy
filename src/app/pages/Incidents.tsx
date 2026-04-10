@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router';
 import { Search, Filter, Calendar, MapPin, AlertTriangle, Trash2, Check, X } from 'lucide-react';
 import { format } from 'date-fns';
@@ -9,9 +9,6 @@ import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { showToast } from '@/app/utils/toast';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { useWebSocket } from '@/app/services/websocket';
-
-
-
 
 export function Incidents() {
   const [incidents, setIncidents] = useState<any[]>([]);
@@ -24,23 +21,32 @@ export function Incidents() {
   const [bulkAction, setBulkAction] = useState<'approve' | 'reject' | 'delete' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
- 
-
+  const [search, setSearch] = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
   useEffect(() => {
     const fetchIncidents = async () => {
       setLoading(true);
       try {
         const recent = await api.dashboard.getRecentViolations(50);
+        const formatStatus = (s: string) =>
+        s?.toLowerCase()
+          .replace('_', ' ')
+          .replace(/\b\w/g, l => l.toUpperCase());
 
-        const mapped = (recent || []).map(v => ({
-          id: v.id,
-          date: v.timestamp,
-          location: v.location,
-          type: v.detections?.[0]?.type || 'Unknown',
-          status: v.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          confidence: v.detections?.[0]?.confidence || 0
-        }));
+        const mapped = (recent || []).map(v => {
+          const confidence = v.detections?.[0]?.confidence || 0;
+          const normalized = confidence > 1 ? confidence / 100 : confidence;
+
+          return {
+            id: v.id,
+            date: v.timestamp,
+            location: v.location,
+            type: v.detections?.[0]?.type || 'Unknown',
+            status: formatStatus(v.status),
+            confidence: normalized
+            }
+        });
 
         mapped.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -56,22 +62,32 @@ export function Incidents() {
     fetchIncidents();
   }, []);
 
-  useWebSocket((msg) => {
+  const { send } = useWebSocket((msg: any) => {
     if (msg.type === 'new_violation') {
       const v = msg.data;
 
+      showToast.violationAlert(
+        v.detections?.[0]?.type || 'Unknown',
+        v.location,
+        v.detections?.[0]?.plate_number
+      );
+
+      const confidence = v.detections?.[0]?.confidence || 0;
+      const normalized = confidence > 1 ? confidence / 100 : confidence;
       const newIncident = {
         id: v.id,
         date: v.timestamp,
         location: v.location,
         type: v.detections?.[0]?.type || 'Unknown',
-        status: v.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        confidence: v.detections?.[0]?.confidence || 0
+        status: v.status?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        confidence: normalized
       };
 
       setIncidents(prev => {
         if (prev.find(i => i.id === newIncident.id)) return prev;
-        return [newIncident, ...prev];
+        return [newIncident, ...prev].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
       });
     }
 
@@ -83,7 +99,7 @@ export function Incidents() {
           i.id === updated.id
             ? {
                 ...i,
-                status: updated.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+                status: updated.status?.toLowerCase().replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
               }
             : i
         )
@@ -92,16 +108,11 @@ export function Incidents() {
 
     if (msg.type === 'bulk_delete') {
       const ids = msg.ids;
-
-      setIncidents(prev =>
-        prev.filter(i => !ids.includes(i.id))
-      );
+      setIncidents(prev => prev.filter(i => !ids.includes(i.id)));
     }
 
     if (msg.type === 'delete_violation') {
-      setIncidents(prev =>
-        prev.filter(i => i.id !== msg.id)
-      );
+      setIncidents(prev => prev.filter(i => i.id !== msg.id));
     }
 
     if (msg.type === 'stats_update') {
@@ -111,10 +122,17 @@ export function Incidents() {
     }
   });
 
+  useEffect(() => {
+    send({
+      type: "subscribe",
+      incident_id: "all"
+    });
+  }, [send]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-slate-400">Loading incidents...</div>
+        <div className="animate-pulse">Loading incidents...</div>
       </div>
     );
   }
@@ -122,6 +140,19 @@ export function Incidents() {
   const filteredIncidents = incidents.filter(incident => {
     if (filterStatus !== 'All' && incident.status !== filterStatus) return false;
     if (filterType !== 'All' && incident.type !== filterType) return false;
+
+    // 🔍 SEARCH FILTER
+    if (search && !String(incident.id).toLowerCase().includes(search.toLowerCase())) return false;
+
+    // 📅 DATE FILTER
+    if (filterDate) {
+      const d = new Date(incident.date);
+      const incidentDate = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+      if (incidentDate !== filterDate) return false;
+    }
+
     return true;
   });
 
@@ -184,8 +215,10 @@ export function Incidents() {
       setIsProcessing(false);
     }
   };
+  
 
   return (
+    
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -200,11 +233,12 @@ export function Incidents() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input 
             type="text" 
-            placeholder="Search ID..." 
+            placeholder="Search ID..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)} 
             className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        
         <div className="relative">
            <AlertTriangle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
            <select 
@@ -218,7 +252,6 @@ export function Incidents() {
              <option value="Overloading">Overloading</option>
            </select>
         </div>
-
         <div className="relative">
            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
            <select 
@@ -233,16 +266,16 @@ export function Incidents() {
              <option value="Needs Info">Needs Info</option>
            </select>
         </div>
-
         <div className="relative">
            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
            <input 
              type="date"
+             value={filterDate}
+             onChange={(e) => setFilterDate(e.target.value)}
              className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-400 focus:outline-none appearance-none"
            />
         </div>
       </div>
-
       {/* Incidents List */}
       {filteredIncidents.length === 0 ? (
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-12 text-center">
@@ -252,7 +285,12 @@ export function Incidents() {
           <h3 className="text-lg font-medium text-white">No Incidents Found</h3>
           <p className="text-slate-400 mt-2">Try adjusting your filters or search criteria.</p>
           <button 
-            onClick={() => {setFilterStatus('All'); setFilterType('All')}}
+            onClick={() => {
+              setFilterStatus('All');
+              setFilterType('All');
+              setSearch('');
+              setFilterDate('');
+            }}
             className="mt-4 text-blue-400 hover:text-blue-300 font-medium"
           >
             Clear Filters
@@ -281,6 +319,7 @@ export function Incidents() {
                 <th className="px-6 py-4">Action</th>
               </tr>
             </thead>
+            
             <tbody className="divide-y divide-slate-800">
               {filteredIncidents.map((incident) => (
                 <tr key={incident.id} className="hover:bg-slate-800/50 transition-colors">
@@ -294,7 +333,9 @@ export function Incidents() {
                       {incident.id}
                     </div>
                   </td>
+                  
                   <td className="px-6 py-4">
+                    
                     <div className="text-slate-200">{format(new Date(incident.date), 'MMM dd, yyyy')}</div>
                     <div className="text-xs text-slate-500">{format(new Date(incident.date), 'HH:mm:ss')}</div>
                   </td>
@@ -316,6 +357,7 @@ export function Incidents() {
                       <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-blue-500 rounded-full" 
+                          
                           style={{ width: `${incident.confidence * 100}%` }}
                         />
                       </div>
@@ -346,7 +388,6 @@ export function Incidents() {
           </table>
         </div>
       )}
-
       {/* Bulk Actions */}
       {selectedIncidents.length > 0 && (
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 flex items-center justify-between">
@@ -384,7 +425,6 @@ export function Incidents() {
           </div>
         </div>
       )}
-
       {/* Confirm Dialog */}
       <ConfirmDialog
         open={showBulkConfirm}

@@ -1,11 +1,23 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '@/app/services/api';
 import { useParams, Link, useNavigate } from 'react-router';
 import { ArrowLeft, MapPin, Calendar, Clock, Sun, ShieldCheck, ShieldAlert, HelpCircle, Check, X, MessageSquare, Save, History, FileText, Camera, Maximize2 } from 'lucide-react';
 import { showToast } from '@/app/utils/toast';
 import { ConfirmDialog } from '@/app/components/ConfirmDialog';
 import { ImageViewer, ImageViewerImage } from '@/app/components/ImageViewer';
+import { useWebSocket } from '@/app/services/websocket';
+
+const formatStatus = (status?: string) => {
+  if (!status) return 'Pending';
+
+  return status
+    .replace('_', ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+};
 
 export function IncidentDetail() {
+  
   const { id } = useParams();
   const navigate = useNavigate();
   const [status, setStatus] = useState('Pending');
@@ -22,127 +34,67 @@ export function IncidentDetail() {
   useEffect(() => {
     if (!id) return;
 
-    const token = localStorage.getItem('access_token');
+    send({
+      type: "subscribe",
+      incident_id: id
+    });
 
-    fetch(`https://saferide-l724.onrender.com/api/violations/${id}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-      .then(res => res.json())
-      .then(data => {
+    const fetchIncident = async () => {
+      try {
+        const data = await api.violations.getById(id);
+
         setIncident(data);
-        setStatus(data.status ? data.status.charAt(0).toUpperCase() + data.status.slice(1) : 'Pending');
-      })
-      .catch(err => console.error(err));
-  }, [id]);
+        setStatus(formatStatus(data.status));
+      } catch (err) {
+        console.error(err);
+        showToast.error('Failed to load incident');
+      }
+    };
 
-  useEffect(() => {
+    fetchIncident();
+  }, [id]);
+  
+  const { send } = useWebSocket((msg: any) => {
+    
     if (!id) return;
 
-    let ws: WebSocket | null = null;
-    let pingInterval: NodeJS.Timeout;
-    let reconnectTimeout: NodeJS.Timeout;
+    // 🔄 STATUS UPDATE
+    if (msg.type === 'update_violation' && msg.data.id === id) {
+      const updated = msg.data;
+      
+      setIncident(prev => ({
+        ...prev,
+        ...updated,
+        detections: updated.detections || prev?.detections || []
+      }));
 
-    const connect = () => {
-      console.log('Attempting WebSocket connection...');
-      ws = new WebSocket('wss://saferide-l724.onrender.com/ws');
+      setStatus(formatStatus(updated.status));
 
-      ws.onopen = () => {
-        console.log('WebSocket connected');
+      if (updated.reviewerNote) setReviewerNote(updated.reviewerNote);
+    }
 
-        // Ping server every 20s to keep alive
-        pingInterval = setInterval(() => {
-          if (ws?.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'ping' }));
-          }
-        }, 20000);
+    // 🧠 NEW DETECTION
+    if (msg.type === 'new_detection' && msg.data.incident_id === id) {
+      setIncident(prev => {
+        const existing = prev?.detections || [];
+        if (existing.some((d: any) => d.id === msg.data.id)) return prev;
 
-        // Subscribe to this incident updates
-        if (ws) {
-          ws.send(JSON.stringify({ type: 'subscribe', incident_id: id }));
-        }
-      };
+        return { ...prev, detections: [...existing, msg.data] };
+      });
+    }
 
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          console.log('WS message:', message);
-
-          // Update incident status
-          if (message.type === 'update_violation' && message.data.id == id) {
-            const updatedIncident = message.data;
-            setIncident(prev => ({
-              ...prev,
-              ...updatedIncident,
-              detections: updatedIncident.detections || prev?.detections || [],
-            }));
-
-            setStatus(updatedIncident.status
-              ? updatedIncident.status.charAt(0).toUpperCase() + updatedIncident.status.slice(1)
-              : 'Pending');
-
-            if (updatedIncident.reviewerNote) setReviewerNote(updatedIncident.reviewerNote);
-
-            showToast.info(
-              'Incident Updated',
-              `Incident ${updatedIncident.id} status changed to ${updatedIncident.status || 'Pending'}`
-            );
-          }
-
-          if (message.type === 'new_violation') {
-            const violation = message.data;
-            
-            // Only show toast if it's the same incident
-            if (violation.id == id) {
-              showToast.violationAlert(
-                violation.detections?.[0]?.type || 'Unknown',
-                violation.location,
-                violation.detections?.[0]?.plate_number,
-                () => console.log('View violation', violation.id)
-              );
-            }
-          }
-
-          // New evidence detection
-          if (message.type === 'new_detection' && message.data.incident_id == id) {
-            setIncident(prev => {
-              const existing = prev?.detections || [];
-              const alreadyExists = existing.some(d => d.id === message.data.id);
-              if (alreadyExists) return prev;
-
-              return { ...prev, detections: [...existing, message.data] };
-            });
-
-            showToast.info('New Evidence Added');
-          }
-
-        } catch (err) {
-          console.error('Failed to parse WS message', err);
-        }
-      };
-
-      ws.onclose = (event) => {
-        console.log('WebSocket closed, reconnecting in 3s...', event.reason);
-        clearInterval(pingInterval);
-        reconnectTimeout = setTimeout(connect, 3000);
-      };
-
-      ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
-        ws?.close();
-      };
-    };
-
-    connect();
-
-    return () => {
-      console.log('Cleaning up WebSocket...');
-      ws?.close();
-      clearInterval(pingInterval);
-      clearTimeout(reconnectTimeout);
-    };
-  }, [id]);
+    // 🔔 OPTIONAL: toast sync
+    if (msg.type === 'new_violation' && msg.data.id === id) {
+      if (id === msg.data.id) {
+        return;
+      }
+      showToast.violationAlert(
+        msg.data.detections?.[0]?.type || 'Unknown',
+        msg.data.location,
+        msg.data.detections?.[0]?.plate_number
+      );
+    }
+  });
 
   // Evidence images data
   const evidenceImages: ImageViewerImage[] =
@@ -169,7 +121,6 @@ export function IncidentDetail() {
 
   const handleConfirmDecision = () => {
     if (!decisionType) return;
-
     // Map decisionType to confirmAction
     let action: 'approve' | 'reject' | 'needsInfo' =
       decisionType === 'Approve' ? 'approve' :
@@ -177,10 +128,8 @@ export function IncidentDetail() {
       'needsInfo';
 
     setConfirmAction(action);
-
     // Close decision modal before showing confirm dialog
     setShowDecisionModal(false);
-
     // Show confirm dialog
     setTimeout(() => setShowConfirmDialog(true), 50);
   };
@@ -194,11 +143,19 @@ export function IncidentDetail() {
     setIsProcessing(true);
 
     try {
+      if (!confirmAction) return;
       const actionToSend =
         confirmAction === 'approve' ? 'approve' :
         confirmAction === 'reject' ? 'reject' :
         confirmAction === 'needsInfo' ? 'needsInfo' :
-        confirmAction === 'reopen' ? 'reopen' : null;
+        'reopen'
+
+      const statusMap: any = {
+        approve: 'Approved',
+        reject: 'Rejected',
+        needsInfo: 'Needs Info',
+        reopen: 'Pending'
+      };
 
       const token = localStorage.getItem('access_token');
       const response = await fetch(
@@ -220,10 +177,16 @@ export function IncidentDetail() {
         throw new Error('Failed to update incident');
       }
 
+      if (!actionToSend) return;
+      
+      setIncident(prev => ({
+        ...prev,
+        status: statusMap[actionToSend]
+      }));
+
       const incidentId = id || '';
 
       if (actionToSend === 'approve') {
-        setStatus('Approved');
         showToast.incidentApproved(incidentId);
 
         setTimeout(() => {
@@ -235,12 +198,10 @@ export function IncidentDetail() {
       }
 
       if (actionToSend === 'reject') {
-        setStatus('Rejected');
         showToast.incidentRejected(incidentId, reviewerNote || undefined);
       }
 
       if (actionToSend === 'needsInfo') {
-        setStatus('Needs Info');
         showToast.info(
           'Additional Information Requested',
           `Incident ${incidentId} marked for additional review.`
@@ -248,7 +209,6 @@ export function IncidentDetail() {
       }
 
       if (actionToSend === 'reopen') {
-        setStatus('Pending');
         showToast.info(
           'Case Reopened',
           `Incident ${incidentId} has been reopened for review.`
@@ -269,9 +229,23 @@ export function IncidentDetail() {
     }
   };
 
+  const dateObj = incident?.timestamp 
+      ? new Date(incident.timestamp) 
+      : new Date();
+
+  
   if (!incident) {
-    return <div className="text-white p-6">Loading incident...</div>;
+    return <div className="animate-pulse">Loading incident...</div>;
   }
+  const primaryDetection = incident?.detections?.[0] || null;
+  const box = primaryDetection?.bounding_box;
+
+  const conf = Math.min(
+    Math.max(Number(primaryDetection?.confidence) || 0, 0),
+    1
+  );
+
+  const normalizedStatus = formatStatus(status);
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -284,12 +258,12 @@ export function IncidentDetail() {
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-white">Incident {id || 'INC-2023-001'}</h1>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                 status === 'Approved' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                 status === 'Rejected' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-                 status === 'Needs Info' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                 normalizedStatus === 'Approved' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                 normalizedStatus === 'Rejected' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                 normalizedStatus === 'Needs Info' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                  'bg-slate-500/10 text-slate-400 border-slate-500/20'
               }`}>
-                {status}
+                {normalizedStatus}
               </span>
             </div>
             <p className="text-slate-400 text-sm mt-1">Reviewing potential violation detected by YOLOv11</p>
@@ -297,7 +271,7 @@ export function IncidentDetail() {
         </div>
         
         <div className="flex gap-2">
-          {status === 'Pending' && (
+          {normalizedStatus === 'Pending' && (
             <>
               <button 
                 onClick={() => handleDecision('Approve')}
@@ -319,7 +293,7 @@ export function IncidentDetail() {
               </button>
             </>
           )}
-          {status !== 'Pending' && (
+          {normalizedStatus !== 'Pending' && (
              <button 
                 onClick={() => handleReopen()}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors font-medium"
@@ -353,11 +327,10 @@ export function IncidentDetail() {
               onClick={() => handleOpenImageViewer(0)}
             >
                <img 
-                 src={incident?.detections?.[0]?.image_url}
+                 src={incident?.detections?.[0]?.image_url || '/fallback.jpg'}
                  alt="Violation Evidence"
                  className="w-full h-full object-cover"
-               />
-               
+               />             
                {/* Zoom Overlay Hint */}
                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
                  <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium">
@@ -367,14 +340,25 @@ export function IncidentDetail() {
                </div>
                
                {/* Bounding Box Overlay */}
-               <div className="absolute top-1/4 left-1/3 w-1/4 h-1/2 border-2 border-orange-500 bg-orange-500/10">
-                 <div className="absolute -top-7 left-0 bg-orange-500 text-white text-xs px-2 py-1 font-mono rounded-t-sm">
-                   {incident?.detections?.[0]?.type?.replace("_", " ")}: {incident?.detections?.[0]?.confidence ? (incident.detections[0].confidence * 100).toFixed(1) : '0'}%
-                 </div>
-               </div>
+               {box && (
+                  <div
+                    className="absolute border-2 border-orange-500 bg-orange-500/10"
+                    style={{
+                      top: `${box.y * 100}%`,
+                      left: `${box.x * 100}%`,
+                      width: `${box.width * 100}%`,
+                      height: `${box.height * 100}%`
+                    }}
+                  >
+                    <div className="absolute -top-7 left-0 bg-orange-500 text-white text-xs px-2 py-1 font-mono rounded-t-sm">
+                      {primaryDetection?.type.replace("_", " ")}:{" "}
+                      {(primaryDetection?.confidence * 100 || 0).toFixed(1)}%
+                    </div>
+                  </div>
+                )}
 
                <div className="absolute bottom-4 right-4 bg-black/70 px-3 py-1.5 rounded text-white text-xs font-mono">
-                 {new Date(incident.timestamp).toLocaleString()}
+                 {dateObj.toLocaleTimeString()}
                </div>
             </div>
             <div className="p-4 bg-slate-950 grid grid-cols-4 gap-2">
@@ -395,7 +379,6 @@ export function IncidentDetail() {
                ))}
             </div>
           </div>
-
           {/* Audit Log (Simulated) */}
           <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
              <h3 className="font-semibold text-white flex items-center gap-2 mb-4">
@@ -416,11 +399,11 @@ export function IncidentDetail() {
                 {status !== 'Pending' && (
                   <div className="flex gap-4">
                      <div className="mt-1">
-                        <div className={`w-2 h-2 rounded-full ${status === 'Approved' ? 'bg-green-500' : status === 'Rejected' ? 'bg-red-500' : 'bg-blue-500'}`} />
+                        <div className={`w-2 h-2 rounded-full ${normalizedStatus === 'Approved' ? 'bg-green-500' : normalizedStatus === 'Rejected' ? 'bg-red-500' : 'bg-blue-500'}`} />
                      </div>
                      <div>
                         <p className="text-sm text-slate-200">
-                          <span className="font-bold">Admin User</span> marked as <span className="font-bold">{status}</span>.
+                          <span className="font-bold">Admin User</span> marked as <span className="font-bold">{normalizedStatus}</span>.
                         </p>
                         {reviewerNote && (
                           <p className="text-sm text-slate-400 italic mt-1">"{reviewerNote}"</p>
@@ -432,7 +415,6 @@ export function IncidentDetail() {
              </div>
           </div>
         </div>
-
         {/* Sidebar Info Column */}
         <div className="space-y-6">
            {/* Detection Details */}
@@ -442,26 +424,28 @@ export function IncidentDetail() {
                  <div className="flex justify-between items-center py-2 border-b border-slate-800">
                    <span className="text-slate-400 text-sm">Violation Type</span>
                    <span className="text-orange-400 font-medium text-sm">
+                      
                       {incident.detections?.[0]?.type?.replace("_", " ")}
                     </span>
                  </div>
                  <div className="flex justify-between items-center py-2 border-b border-slate-800">
                    <span className="text-slate-400 text-sm">Model Confidence</span>
                    <span className="text-slate-200 font-mono text-sm">
-                      {(incident.detections?.[0]?.confidence * 100).toFixed(1)}%
+                      {((incident.detections?.[0]?.confidence || 0)*100).toFixed(1)}%
                     </span>
                  </div>
                  <div className="flex justify-between items-center py-2 border-b border-slate-800">
-                   <span className="text-slate-400 text-sm">Plate Number</span>
-                   <div className="text-right">
-                     <div className="bg-white text-black font-bold px-2 py-0.5 rounded text-sm font-mono border-2 border-black">
-                       <div className="bg-white text-black font-bold px-2 py-0.5 rounded text-sm font-mono border-2 border-black">
-                        {incident.plate_number || 'N/A'}
-                      </div>
-                     </div>
-                     <div className="text-[10px] text-green-500 mt-0.5">OCR Conf: 98%</div>
-                   </div>
-                 </div>
+                  <span className="text-slate-400 text-sm">Plate Number</span>
+
+                  <div className="text-right">
+                    <div className="bg-white text-black font-bold px-2 py-0.5 rounded text-sm font-mono border-2 border-black">
+                      {incident.plate_number || 'N/A'}
+                    </div>
+                    <div className="text-[10px] text-green-500 mt-0.5">
+                      OCR Conf: 98%
+                    </div>
+                  </div>
+                </div>
                  <div className="flex justify-between items-center py-2 border-b border-slate-800">
                    <span className="text-slate-400 text-sm">Passenger Count</span>
                    <span className="text-slate-200 text-sm">1 (Driver Only)</span>
@@ -472,7 +456,6 @@ export function IncidentDetail() {
                  </div>
               </div>
            </div>
-
            {/* Context & Conditions */}
            <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
               <h3 className="font-semibold text-white mb-4">Context & Conditions</h3>
@@ -492,7 +475,7 @@ export function IncidentDetail() {
                        <span className="text-xs">Time</span>
                     </div>
                     <div className="font-medium text-sm text-slate-200">
-                      {new Date(incident.timestamp).toLocaleTimeString()}
+                      {dateObj.toLocaleTimeString()}
                     </div>
                  </div>
                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
@@ -511,7 +494,6 @@ export function IncidentDetail() {
                  </div>
               </div>
            </div>
-
            {/* Suggested Action */}
            <div className="bg-blue-900/10 rounded-xl border border-blue-500/20 p-6">
               <h3 className="font-semibold text-blue-400 mb-2 text-sm uppercase tracking-wider">Suggested Violation</h3>
@@ -534,7 +516,6 @@ export function IncidentDetail() {
            </div>
         </div>
       </div>
-
       {/* Decision Modal */}
       {showDecisionModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">

@@ -26,19 +26,18 @@ export function Dashboard() {
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket((message: WebSocketMessage) => {
     if (message.type === 'new_violation') {
+      
       const newViolation = message.data as Violation;
+      const detection = newViolation.detections?.[0];
+      setRecentViolations(prev => [newViolation, ...prev.slice(0, 9)]);
 
       // 1. Update the list of recent violations
-      setRecentViolations(prev => {
-        if (prev.find(v => v.id === newViolation.id)) return prev;
-        return [newViolation, ...prev.slice(0, 19)];
-      });
-
+      
       // 2. Show toast notification (clickable to navigate)
       showToast.violationAlert(
-        newViolation.detections[0]?.type || 'Unknown',
+        detection.type || 'Unknown',
         newViolation.location,
-        newViolation.detections[0]?.plate_number || '',
+        detection.plate_number || '',
         () => navigate(`/incidents/${newViolation.id}`) // navigate on click
       );
 
@@ -46,18 +45,29 @@ export function Dashboard() {
       // navigate(`/incidents/${newViolation.id}`);
 
       // 4. Refresh stats if needed
-      setStats(prev => prev ? {
-        ...prev,
-        helmet_violations: prev.helmet_violations + (newViolation.detections[0]?.type === 'no_helmet' ? 1 : 0),
-        plate_violations: prev.plate_violations + (newViolation.detections[0]?.type === 'no_plate' ? 1 : 0),
-        overloading_violations: prev.overloading_violations + (newViolation.detections[0]?.type === 'overloading' ? 1 : 0),
-      } : prev);
+      
+    
     }
     if (message.type === 'update_violation') {
-      const updated = message.data as Violation;
-      setRecentViolations(prev =>
-        prev.map(v => (v.id === updated.id ? { ...v, ...updated } : v))
+      setIncidents(prev =>
+        prev.map(i =>
+          i.id === updated.id
+            ? { ...i, status: formattedStatus }
+            : i
+        )
       );
+
+      // 🔥 update stats locally
+      setDashboardStats(prev => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          pending: updated.status === 'pending' ? prev.pending + 1 : prev.pending - 1,
+          approved: updated.status === 'approved' ? prev.approved + 1 : prev.approved,
+          rejected: updated.status === 'rejected' ? prev.rejected + 1 : prev.rejected
+        };
+      });
     }
 
     if (message.type === 'system_status') {
@@ -65,16 +75,11 @@ export function Dashboard() {
       showToast.systemStatus(status, message.data.message);
     }
 
-    if (message.type === 'bulk_delete') {
-      setRecentViolations(prev =>
-        prev.filter(v => !message.ids.includes(v.id))
-      );
+    if (message.type === 'bulk_delete' || message.type === 'delete_violation') {
+      loadRecentViolations();
     }
-
-    if (message.type === 'delete_violation') {
-      setRecentViolations(prev =>
-        prev.filter(v => v.id !== message.id)
-      );
+    if (message.type === 'stats_update') {
+      loadStats();
     }
   }, true);
 
@@ -140,7 +145,7 @@ export function Dashboard() {
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-96">
-      <div className="text-slate-400">Loading dashboard...</div>
+      <div className="animate-pulse">Loading dashboard...</div>
     </div>
   );
 

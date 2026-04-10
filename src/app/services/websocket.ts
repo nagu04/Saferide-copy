@@ -51,10 +51,7 @@ class WebSocketService {
         }));
 
         // 🔥 SUBSCRIBE TO ALL INCIDENTS
-        this.ws?.send(JSON.stringify({
-          type: "subscribe",
-          incident_id: "all"
-        }));
+        
 
         this.ws?.send(JSON.stringify({
           type: "sync_request"

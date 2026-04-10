@@ -1,0 +1,31 @@
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+# LOCAL DATABASE (MySQL)
+DATABASE_URL = "mysql+pymysql://root:root123@localhost/saferide_db"
+
+# Create the engine
+engine = create_engine(
+    DATABASE_URL,
+    echo=True,             # Optional: shows SQL queries in console for debugging
+    pool_pre_ping=True     # Keeps the connection alive
+)
+
+# Create session class
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
+# Base class for models
+Base = declarative_base()
+
+
+# Dependency for FastAPI routes
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

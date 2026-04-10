@@ -57,13 +57,20 @@ export function History() {
             }))
           : [],
       };
-      setHistoryData(prev => [newViolation, ...prev]);
+      setHistoryData(prev => {
+        const exists = prev.find(v => v.id === newViolation.id);
+        if (exists) return prev;
+        return [newViolation, ...prev];
+      });
     }
 
     if (msg.type === 'update_violation') {
-      const updated = msg.data;
       setHistoryData(prev =>
-        prev.map(v => v.id === updated.id ? { ...v, ...updated } : v)
+        prev.map(v =>
+          v.id === msg.data.id
+            ? { ...v, status: msg.data.status }
+            : v
+        )
       );
     }
   });
@@ -75,7 +82,7 @@ export function History() {
       String(item.id).padStart(5, '0').includes(searchTerm);
 
     const matchesViolation = violationFilter === 'All Violations' || 
-      item.detections.some((d: any) => d.type === violationFilter);
+      item.detections.some((d: any) => d.type.replace("_", " ").toLowerCase() === violationFilter.toLowerCase());
 
     return matchesSearch && matchesViolation;
   });
@@ -89,7 +96,7 @@ export function History() {
   const handleExportCSV = () => {
     const headers = ['ID', 'Violation Type', 'Location', 'Timestamp', 'Status'];
     const csvData = filteredData.map(row => [
-      `#${String(row.id).padStart(5, '0')}`,
+      `#${String(row.id)}`,
       row.detections.map((d: any) => d.type).join('; '),
       row.location,
       row.timestamp,
@@ -116,7 +123,7 @@ export function History() {
   const handlePrevPage = () => setCurrentPage(prev => Math.max(prev - 1, 1));
   const handleViewDetails = (id: number) => navigate(`/incidents/${id}`);
 
-  if (loading) return <div>Loading history...</div>;
+  if (loading) return <div className='animate-pulse'>Loading history...</div>;
 
   return (
     <div className="space-y-6">
@@ -206,7 +213,7 @@ export function History() {
                   <td className="px-6 py-4 text-slate-300">{new Date(row.timestamp).toLocaleString()}</td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${
-                      row.status === 'Reported' ? 'text-green-400' : 'text-slate-400'
+                      row.status === 'pending' ? 'text-green-400' : 'text-slate-400'
                     }`}>
                       {row.status?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                     </span>
