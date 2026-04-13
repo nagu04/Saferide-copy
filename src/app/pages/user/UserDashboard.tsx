@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import { useViolations, Violation } from '@/app/contexts/ViolationContext';
 import { showToast } from '@/app/utils/toast';
 import { useEffect, useState } from "react";
-import { fetchViolations } from "@/app/api/violationsApi";
+import { fetchViolations } from "@/app/violationsApi";
 
 
 export function UserDashboard() {
