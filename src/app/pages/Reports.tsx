@@ -30,7 +30,7 @@ export function Reports() {
         showToast.error("Session expired. Please login again.");
         return;
       }
-      const res = await fetch("https://saferide-l724.onrender.com/api/reports/recent", {
+      const res = await fetch("https://saferide-backend-1tqc.onrender.com/api/reports/recent", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -117,7 +117,7 @@ export function Reports() {
 
     try {
       const res = await fetch(
-        `https://saferide-l724.onrender.com/api/reports/generate?start=${dates.start}&end=${dates.end}&format=${format}&report_type=${encodeURIComponent(reportType)}`,
+        `https://saferide-backend-1tqc.onrender.com/api/reports/generate?start=${dates.start}&end=${dates.end}&format=${format}&report_type=${encodeURIComponent(reportType)}`,
         {
           method: "GET",
           headers: {
@@ -145,7 +145,7 @@ export function Reports() {
       window.URL.revokeObjectURL(url);
 
       const resRecent = await fetch(
-        "https://saferide-l724.onrender.com/api/reports/recent",
+        "https://saferide-backend-1tqc.onrender.com/api/reports/recent",
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -170,7 +170,7 @@ export function Reports() {
     }
 
     const res = await fetch(
-      `https://saferide-l724.onrender.com/api/reports/download/${report.id}`,
+      `https://saferide-backend-1tqc.onrender.com/api/reports/download/${report.id}`,
       {
         headers: { Authorization: `Bearer ${token}` },
       }
@@ -195,7 +195,7 @@ export function Reports() {
       showToast.error("Session expired. Please login again.");
       return;
     }
-    const res = await fetch(`https://saferide-l724.onrender.com/api/reports/${reportId}`, {
+    const res = await fetch(`https://saferide-backend-1tqc.onrender.com/api/reports/${reportId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });

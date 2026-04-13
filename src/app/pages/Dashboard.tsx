@@ -105,7 +105,7 @@ export function Dashboard() {
 
   useEffect(() => {
     const keepAlive = setInterval(() => {
-      fetch("https://saferide-l724.onrender.com/health").catch(() => {});
+      fetch("https://saferide-backend-1tqc.onrender.com/health").catch(() => {});
     }, 4 * 60 * 1000); // every 4 minutes
 
     return () => clearInterval(keepAlive);

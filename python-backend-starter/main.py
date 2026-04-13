@@ -223,17 +223,20 @@ async def add_audit_log(action, user="system", details="", log_type="system", ip
         db.add(log)
         db.commit()
 
-    await manager.broadcast_all({
-        "type": "audit_log",
-        "data": {
-            "id": log.id,
-            "action": log.action,
-            "user": log.user,
-            "details": log.details,
-            "type": log.type,
-            "timestamp": log.timestamp.isoformat()
-        }
-    })
+    try:
+        await manager.broadcast_all({
+            "type": "audit_log",
+            "data": {
+                "id": log.id,
+                "action": log.action,
+                "user": log.user,
+                "details": log.details,
+                "type": log.type,
+                "timestamp": log.timestamp.isoformat()
+            }
+        })
+    except Exception as e:
+        print("Broadcast error (non-fatal):", e)
 
 # ==================== Authentication ====================
 
@@ -969,16 +972,19 @@ async def generate_report(
     db.add(db_report)
     db.commit()
 
-    await manager.broadcast_all({
-        "type": "new_report",
-        "data": {
-            "id": report_id,
-            "name": filename,
-            "user": current_user.full_name,
-            "date": datetime.now(timezone.utc).isoformat(),
-            "size": f"{len(filtered)} records"
-        }
-    })
+    try:
+        await manager.broadcast_all({
+            "type": "new_report",
+            "data": {
+                "id": report_id,
+                "name": filename,
+                "user": current_user.full_name,
+                "date": datetime.now(timezone.utc).isoformat(),
+                "size": f"{len(filtered)} records"
+            }
+        })
+    except Exception as e:
+        print("Broadcast error (non-fatal):", e)
 
     return response
 

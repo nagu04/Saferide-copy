@@ -159,7 +159,7 @@ export function IncidentDetail() {
 
       const token = localStorage.getItem('access_token');
       const response = await fetch(
-        `https://saferide-l724.onrender.com/api/violations/${id}/review`,
+        `https://saferide-backend-1tqc.onrender.com/api/violations/${id}/review`,
         {
           method: 'POST',
           headers: {

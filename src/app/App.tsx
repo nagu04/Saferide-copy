@@ -27,7 +27,7 @@ export default function App() {
   useEffect(() => {
     const wakeServer = async () => {
       try {
-        await fetch("https://saferide-l724.onrender.com/health");
+        await fetch("https://saferide-backend-1tqc.onrender.com/health");
         console.log("Server awake");
       } catch (e) {
         console.log("Server wake failed");
