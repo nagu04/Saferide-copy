@@ -5,19 +5,51 @@ import { format } from 'date-fns';
 import { motion } from 'motion/react';
 import { useViolations, Violation } from '@/app/contexts/ViolationContext';
 import { showToast } from '@/app/utils/toast';
+import { useEffect, useState } from "react";
+import { fetchViolations } from "@/app/api/violationsApi";
+
 
 export function UserDashboard() {
-  const { violations, payments } = useViolations();
+  const [violations, setViolations] = useState<any[]>([]);
+  //const [payments, setPayments] = useState<any[]>([]); // placeholder for now
+  const [loading, setLoading] = useState(true);
 
   // Calculate stats dynamically
   const totalViolations = violations.length;
-  const pendingPayments = violations.filter(v => v.status === 'unpaid').length;
-  const paidViolations = violations.filter(v => v.status === 'paid').length;
-  const totalAmountDue = violations.filter(v => v.status === 'unpaid').reduce((sum, v) => sum + v.amount, 0);
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const pendingPayments = violations.filter(v => v.payment_status === 'unpaid').length;
+  const paidViolations = violations.filter(v => v.payment_status === 'paid').length;
+  const totalAmountDue = violations.filter(v => v.payment_status === 'unpaid').reduce((sum, v) => sum + v.amount, 0);
+  const totalPaid = violations
+    .filter(v => v.payment_status === "paid")
+    .reduce((sum, v) => sum + v.amount, 0);
 
   // Get recent violations (last 3)
-  const recentViolations = violations.slice(0, 3);
+  const recentViolations = [...violations]
+    .sort((a, b) =>
+      new Date(b.timestamp || 0).getTime() -
+      new Date(a.timestamp || 0).getTime()
+    )
+    .slice(0, 3);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await fetchViolations();
+        setViolations(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+
+    // OPTIONAL: realtime sync (same as admin)
+    const interval = setInterval(load, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDownloadReceipt = (violation: Violation) => {
     // Generate receipt content
@@ -31,10 +63,10 @@ Payment Date: ${violation.paidDate ? format(new Date(violation.paidDate), 'MMM d
 
 VIOLATION DETAILS
 ${'-'.repeat(50)}
-Type: ${violation.type}
-Date: ${format(new Date(violation.date), 'MMM dd, yyyy HH:mm:ss')}
+Type: ${violation.violation_type}
+Date: ${format(new Date(violation.timestamp), 'MMM dd, yyyy HH:mm:ss')}
 Location: ${violation.location}
-Plate Number: ${violation.plateNumber}
+Plate Number: ${violation.plate_number}
 
 PAYMENT INFORMATION
 ${'-'.repeat(50)}
@@ -178,30 +210,30 @@ Generated: ${new Date().toLocaleString()}
                   <div className="flex items-center gap-3 mb-2">
                     <span className="font-mono font-semibold text-slate-200">{violation.id}</span>
                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                      violation.status === 'paid' 
+                      violation.payment_status === 'paid' 
                         ? 'text-green-400 bg-green-400/10' 
                         : 'text-red-400 bg-red-400/10'
                     }`}>
-                      {violation.status === 'paid' ? 'Paid' : 'Unpaid'}
+                      {violation.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
                     </span>
                     <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-orange-500/10 text-orange-400">
-                      {violation.type}
+                      {violation.violation_type}
                     </span>
                   </div>
                   <div className="text-sm text-slate-400 space-y-1">
-                    <div>Date: {format(new Date(violation.date), 'MMM dd, yyyy HH:mm')}</div>
+                    <div>Date: {format(new Date(violation.timestamp), 'MMM dd, yyyy HH:mm')}</div>
                     <div>Location: {violation.location}</div>
-                    {violation.status === 'unpaid' && (
+                    {violation.payment_status === 'unpaid' && (
                       <div className="text-red-400">Due: {format(new Date(violation.dueDate), 'MMM dd, yyyy')}</div>
                     )}
-                    {violation.status === 'paid' && violation.paidDate && (
+                    {violation.payment_status === 'paid' && violation.paidDate && (
                       <div className="text-green-400">Paid: {format(new Date(violation.paidDate), 'MMM dd, yyyy')}</div>
                     )}
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-bold text-white mb-2">₱{violation.amount.toLocaleString()}</div>
-                  {violation.status === 'unpaid' && (
+                  {violation.payment_status === 'unpaid' && (
                     <Link
                       to={`/user/violations/${violation.id}/payment`}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
@@ -209,7 +241,7 @@ Generated: ${new Date().toLocaleString()}
                       Pay Now
                     </Link>
                   )}
-                  {violation.status === 'paid' && (
+                  {violation.payment_status === 'paid' && (
                     <button
                       onClick={() => handleDownloadReceipt(violation)}
                       className="text-sm text-slate-400 hover:text-slate-300"

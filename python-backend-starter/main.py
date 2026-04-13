@@ -15,6 +15,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
 from jwt import InvalidTokenError
+from .schemas import UserSchema
 
 print("SafeRide API starting...")
 import cv2, csv, threading, queue, jwt, secrets
@@ -62,7 +63,7 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
-class User(BaseModel):
+class UserSchema(BaseModel):
     id: str
     username: str
     email: str
@@ -74,7 +75,7 @@ class User(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str
-    user: User
+    user: UserSchema
 
 class ViolationDetection(BaseModel):
     type: str
@@ -125,11 +126,24 @@ class Incident(Base):
 
     id = Column(String(50), primary_key=True, index=True)
     camera_id = Column(Integer, ForeignKey("cameras.id"))
+
     location = Column(String(100))
     violation_type = Column(String(50))
+
     status = Column(String(20), default="pending")
+
+    # ✅ ADD THESE
+    plate_number = Column(String(20), nullable=True)
+    owner_name = Column(String(100), nullable=True)
+    user_id = Column(Integer, nullable=True)  # link to user
+
+    amount = Column(Integer, default=0)
+    payment_status = Column(String(20), default="unpaid")
+    paid_at = Column(DateTime, nullable=True)
+
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     image_url = Column(Text, nullable=True)
+
     reviewed_by = Column(Integer, ForeignKey("admin_users.id"), nullable=True)
     reviewer_note = Column(Text, nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
@@ -164,9 +178,22 @@ class CameraResponse(BaseModel):
     class Config:
         orm_mode = True
 
+class AppUser(Base):
+    __tablename__ = "app_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String(100))
+    email = Column(String(100), unique=True)
+    password_hash = Column(String(255))
+    plate_number = Column(String(20), unique=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 # ==================== Mock Database ====================
 
 # ==================== Helper Functions ====================
+
+def normalize_plate(plate: str) -> str:
+    return plate.upper().replace(" ", "").strip()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
@@ -307,7 +334,7 @@ async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     return LoginResponse(
         access_token=access_token,
         token_type="bearer",
-        user=User(
+        user=UserSchema(
             id=str(user.id),
             username=user.username,
             email=user.email,
@@ -470,19 +497,53 @@ async def receive_detection(data: dict, db: Session = Depends(get_db)):
         "status": "pending"
     }
     camera = db.query(Camera).filter(Camera.camera_code == violation["camera_id"]).first()
+    if not camera:
+        print(f"[WARN] Unknown camera: {violation['camera_id']}")
     first_detection = violation["detections"][0] if violation["detections"] else None
+
+    linked_user = None
+
+    plate = first_detection.get("plate_number")
+    if first_detection:
+        plate = normalize_plate(plate)
+
+    if plate:
+        linked_user = db.query(AppUser).filter(
+            AppUser.plate_number == plate
+        ).first()
+
+        if not linked_user:
+            print(f"[INFO] No user found for plate {plate}")
 
     try:
         ts = datetime.fromisoformat(violation["timestamp"])
     except ValueError:
         ts = datetime.now(timezone.utc)
 
+    def get_amount(violation_type):
+        if violation_type == "no_helmet":
+            return 500
+        elif violation_type == "no_plate":
+            return 1000
+        elif violation_type == "overloading":
+            return 1500
+        return 300
+    
     incident = Incident(
         id=violation["id"],
         camera_id=camera.id if camera else None,
         location=violation["location"],
-        violation_type = first_detection["type"] if first_detection else "unknown",
+        violation_type=first_detection["type"] if first_detection else "unknown",
         status="pending",
+
+        plate_number=plate,
+
+        user_id=linked_user.id if linked_user else None,
+        owner_name=linked_user.full_name if linked_user else "Unknown",
+
+        amount=get_amount(first_detection["type"] if first_detection else "unknown"),
+        payment_status="unpaid",
+
         timestamp=ts.astimezone(timezone.utc),
         image_url=first_detection.get("image_url") if first_detection else None
     )
@@ -516,6 +577,7 @@ async def receive_detection(data: dict, db: Session = Depends(get_db)):
 class DecisionRequest(BaseModel):
     action: str
     reviewerNote: Optional[str] = None
+    
 
 @app.post("/api/violations/{violation_id}/review")
 async def decide_violation(
@@ -577,7 +639,72 @@ async def decide_violation(
             "status": incident.status
         }
     }
-# ==================== Dashboard ====================
+# ==================== User Dashboard ====================
+
+@app.get("/api/user/violations")
+async def get_user_violations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    incidents = db.query(Incident)\
+        .filter(Incident.user_id == int(current_user.id))\
+        .order_by(Incident.timestamp.desc())\
+        .all()
+    
+
+    return [
+        {
+            "id": i.id,
+            "timestamp": i.timestamp.isoformat(),
+            "location": i.location,
+            "violation_type": i.violation_type,
+            "status": i.payment_status,
+            "payment_status": i.payment_status,
+            "amount": i.amount,
+            "plate_number": i.plate_number,
+            "paid_at": i.paid_at.isoformat() if i.paid_at else None,
+
+            # ✅ ADD THIS LINE HERE
+            "dueDate": (i.timestamp + timedelta(days=7)).isoformat(),
+
+            "paidDate": i.paid_at.isoformat() if i.paid_at else None
+        }
+        for i in incidents
+    ]
+
+
+@app.post("/api/user/pay/{violation_id}")
+async def pay_violation(
+    violation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    incident = db.query(Incident).filter(
+        Incident.id == violation_id,
+        Incident.user_id == int(current_user.id)
+    ).first()
+
+    if not incident:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    if incident.payment_status == "paid":
+        raise HTTPException(status_code=400, detail="Already paid")
+
+    incident.payment_status = "paid"
+    incident.paid_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+    await manager.broadcast_all({
+        "type": "update_violation",
+        "data": {
+            "id": incident.id,
+            "status": "paid"
+        }
+    })
+
+    return {"status": "paid"}
+# ==================== Admin Dashboard ====================
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(db: Session = Depends(get_db)):
@@ -668,7 +795,12 @@ async def get_trends(
         overload = 0
 
         for v in incidents:
-                ts = v.timestamp.replace(tzinfo=timezone.utc) if v.timestamp.tzinfo is None else v.timestamp
+                
+                ts = ts = v.timestamp 
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                else: v.timestamp
+               
                 if start_time <= ts <= end_time:
                     if v.violation_type == "no_helmet":
                         helmet += 1
