@@ -15,7 +15,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
 from jwt import InvalidTokenError
-from .schemas import UserSchema
 
 print("SafeRide API starting...")
 import cv2, csv, threading, queue, jwt, secrets
