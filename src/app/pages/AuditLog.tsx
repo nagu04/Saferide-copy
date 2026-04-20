@@ -28,7 +28,7 @@ export function AuditLog() {
       setLoading(true);
       try {
         const res = await api.audit.getLogs(); // make sure endpoint exists
-        
+
         const mapped = (res || []).map((log: any, index: number) => ({
           id: log.id || index,
           action: log.action,
@@ -153,7 +153,7 @@ export function AuditLog() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">System Audit Log</h2>
+        <h2 className="text-2xl font-bold text-white">System Audit Log</h2>
         <p className="text-slate-400">Track all user actions and system events for compliance</p>
       </div>
 
@@ -164,7 +164,7 @@ export function AuditLog() {
           <input 
             type="text" 
             placeholder="Search audit logs..." 
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -208,7 +208,7 @@ export function AuditLog() {
       {/* Activity Timeline */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
         <div className="p-6 border-b border-slate-800">
-          <h3 className="text-lg font-semibold text-slate-900">Audit Trail</h3>
+          <h3 className="text-lg font-semibold text-white">Audit Trail</h3>
         </div>
 
         <div className="divide-y divide-slate-800">
@@ -227,7 +227,7 @@ export function AuditLog() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
-                        <h4 className="font-semibold text-slate-900">{log.action}</h4>
+                        <h4 className="font-semibold text-white">{log.action}</h4>
                         <span className="text-xs text-slate-500">by {log.user}</span>
                       </div>
                       <p className="text-sm text-slate-400 mb-2">{log.details}</p>
@@ -251,7 +251,7 @@ export function AuditLog() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
           <div className="text-sm text-slate-400 mb-2">Total Events</div>
-          <div className="text-2xl font-bold text-slate-900">{logs.length}</div>
+          <div className="text-2xl font-bold text-white">{logs.length}</div>
         </div>
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
           <div className="text-sm text-slate-400 mb-2">User Logins</div>

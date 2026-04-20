@@ -110,8 +110,8 @@ export function UserActivityLog() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Activity Log</h2>
-        <p className="text-slate-600">Track your account activities and actions</p>
+        <h2 className="text-2xl font-bold text-white">Activity Log</h2>
+        <p className="text-slate-400">Track your account activities and actions</p>
       </div>
 
       {/* Filters Section */}
@@ -154,7 +154,7 @@ export function UserActivityLog() {
       {/* Activity Timeline */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
         <div className="p-6 border-b border-slate-800">
-          <h3 className="text-lg font-semibold text-slate-900">Recent Activities</h3>
+          <h3 className="text-lg font-semibold text-white">Recent Activities</h3>
         </div>
 
         <div className="divide-y divide-slate-800">
@@ -172,8 +172,8 @@ export function UserActivityLog() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h4 className="font-semibold text-slate-900 mb-1">{activity.action}</h4>
-                      <p className="text-sm text-slate-600">{activity.description}</p>
+                      <h4 className="font-semibold text-white mb-1">{activity.action}</h4>
+                      <p className="text-sm text-slate-400">{activity.description}</p>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-slate-500 flex-shrink-0">
                       <Clock className="w-4 h-4" />
@@ -190,17 +190,17 @@ export function UserActivityLog() {
       {/* Activity Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
-          <div className="text-sm text-slate-700 mb-2">Total Activities</div>
-          <div className="text-2xl font-bold text-slate-900">{ACTIVITY_LOG.length}</div>
+          <div className="text-sm text-slate-400 mb-2">Total Activities</div>
+          <div className="text-2xl font-bold text-white">{ACTIVITY_LOG.length}</div>
         </div>
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
-          <div className="text-sm text-slate-700 mb-2">Payments Made</div>
+          <div className="text-sm text-slate-400 mb-2">Payments Made</div>
           <div className="text-2xl font-bold text-green-400">
             {ACTIVITY_LOG.filter(a => a.type === 'payment').length}
           </div>
         </div>
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
-          <div className="text-sm text-slate-700 mb-2">Last Login</div>
+          <div className="text-sm text-slate-400 mb-2">Last Login</div>
           <div className="text-lg font-semibold text-blue-400">
             {format(new Date(ACTIVITY_LOG.find(a => a.type === 'auth')?.timestamp || new Date()), 'MMM dd, HH:mm')}
           </div>

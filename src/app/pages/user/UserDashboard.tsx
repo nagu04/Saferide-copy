@@ -96,8 +96,8 @@ Generated: ${new Date().toLocaleString()}
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Welcome Back</h2>
-        <p className="text-slate-600">Here's an overview of your violations and payments</p>
+        <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
+        <p className="text-slate-400">Here's an overview of your violations and payments</p>
       </div>
 
       {/* Stats Cards */}
@@ -113,8 +113,8 @@ Generated: ${new Date().toLocaleString()}
                 <AlertCircle className="w-6 h-6 text-orange-400" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900 mb-1">{totalViolations}</div>
-            <div className="text-sm text-slate-700">Total Violations</div>
+            <div className="text-2xl font-bold text-white mb-1">{totalViolations}</div>
+            <div className="text-sm text-slate-400">Total Violations</div>
           </div>
         </motion.div>
 
@@ -129,8 +129,8 @@ Generated: ${new Date().toLocaleString()}
                 <Clock className="w-6 h-6 text-red-400" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900 mb-1">₱{totalAmountDue.toLocaleString()}</div>
-            <div className="text-sm text-slate-700">Amount Due</div>
+            <div className="text-2xl font-bold text-white mb-1">₱{totalAmountDue.toLocaleString()}</div>
+            <div className="text-sm text-slate-400">Amount Due</div>
           </div>
         </motion.div>
 
@@ -145,8 +145,8 @@ Generated: ${new Date().toLocaleString()}
                 <CheckCircle className="w-6 h-6 text-green-400" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900 mb-1">{paidViolations}</div>
-            <div className="text-sm text-slate-700">Paid Violations</div>
+            <div className="text-2xl font-bold text-white mb-1">{paidViolations}</div>
+            <div className="text-sm text-slate-400">Paid Violations</div>
           </div>
         </motion.div>
 
@@ -161,8 +161,8 @@ Generated: ${new Date().toLocaleString()}
                 <CreditCard className="w-6 h-6 text-blue-400" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900 mb-1">₱{totalPaid.toLocaleString()}</div>
-            <div className="text-sm text-slate-700">Total Paid</div>
+            <div className="text-2xl font-bold text-white mb-1">₱{totalPaid.toLocaleString()}</div>
+            <div className="text-sm text-slate-400">Total Paid</div>
           </div>
         </motion.div>
       </div>
@@ -191,8 +191,8 @@ Generated: ${new Date().toLocaleString()}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Recent Violations</h3>
-            <p className="text-sm text-slate-600 mt-1">Your latest traffic violations</p>
+            <h3 className="text-lg font-semibold text-white">Recent Violations</h3>
+            <p className="text-sm text-slate-400 mt-1">Your latest traffic violations</p>
           </div>
           <Link 
             to="/user/violations"

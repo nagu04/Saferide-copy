@@ -112,11 +112,11 @@ Generated: ${new Date().toLocaleString()}
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Payment History</h2>
-          <p className="text-slate-600">View your past violation payments</p>
+          <h2 className="text-2xl font-bold text-white">Payment History</h2>
+          <p className="text-slate-400">View your past violation payments</p>
         </div>
         <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-2">
-          <div className="text-sm text-slate-700">Total Paid</div>
+          <div className="text-sm text-slate-400">Total Paid</div>
           <div className="text-xl font-bold text-green-400">₱{totalPaid.toLocaleString()}</div>
         </div>
       </div>
@@ -217,7 +217,7 @@ Generated: ${new Date().toLocaleString()}
 
       {/* Export Options */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">Export Payment Records</h3>
+        <h3 className="text-lg font-semibold text-white mb-4">Export Payment Records</h3>
         <div className="flex flex-wrap gap-3">
           <button className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-200 rounded-lg hover:bg-slate-700 transition-colors" onClick={handleExportCSV}>
             <Download className="w-4 h-4" />

@@ -29,7 +29,7 @@ export function ModelMetrics() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Model Metrics</h2>
+        <h2 className="text-2xl font-bold text-white">Model Metrics</h2>
         <p className="text-slate-400">YOLOv11 Performance Analytics</p>
       </div>
 
@@ -72,7 +72,7 @@ export function ModelMetrics() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Precision-Recall Curve */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-          <h3 className="font-semibold text-slate-900 mb-6">Precision-Recall Curve</h3>
+          <h3 className="font-semibold text-white mb-6">Precision-Recall Curve</h3>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={PR_DATA}>
@@ -104,7 +104,7 @@ export function ModelMetrics() {
 
         {/* Per Class Performance */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-          <h3 className="font-semibold text-slate-900 mb-6">Class Performance (F1 Score)</h3>
+          <h3 className="font-semibold text-white mb-6">Class Performance (F1 Score)</h3>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart layout="vertical" data={CLASS_PERFORMANCE}>
@@ -125,7 +125,7 @@ export function ModelMetrics() {
 
         {/* Confusion Matrix (Simulated) */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 lg:col-span-2">
-           <h3 className="font-semibold text-slate-900 mb-6">Confusion Matrix</h3>
+           <h3 className="font-semibold text-white mb-6">Confusion Matrix</h3>
            <div className="overflow-x-auto">
              <table className="w-full text-center">
                <thead>
@@ -186,7 +186,7 @@ function MetricCard({ title, value, change, icon: Icon, color, bg }: any) {
       <div className="flex justify-between items-start">
         <div>
           <p className="text-sm text-slate-400 mb-1">{title}</p>
-          <h3 className="text-3xl font-bold text-slate-900">{value}</h3>
+          <h3 className="text-3xl font-bold text-white">{value}</h3>
           <div className="flex items-center text-sm mt-1 text-green-500">
             <span>{change}</span>
             <span className="text-slate-500 ml-1">vs last version</span>

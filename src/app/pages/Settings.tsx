@@ -65,17 +65,17 @@ export function Settings() {
   return (
     <div className="space-y-6">
        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Camera Settings</h2>
+          <h2 className="text-2xl font-bold text-white">Camera Settings</h2>
           <p className="text-slate-400">Configure YOLOv11 detection parameters</p>
         </div>
 
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-6">
            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-slate-900">Detection Thresholds</h3>
+              <h3 className="text-lg font-semibold text-white">Detection Thresholds</h3>
               
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="block text-sm font-medium text-slate-700">Confidence Threshold</label>
+                  <label className="block text-sm font-medium text-slate-300">Confidence Threshold</label>
                   <span className="text-sm font-mono text-blue-400">{confidenceThreshold[0]}%</span>
                 </div>
                 <Slider
@@ -95,7 +95,7 @@ export function Settings() {
 
                <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="block text-sm font-medium text-slate-700">IOU Threshold</label>
+                  <label className="block text-sm font-medium text-slate-300">IOU Threshold</label>
                   <span className="text-sm font-mono text-blue-400">{iouThreshold[0]}%</span>
                 </div>
                 <Slider
@@ -115,7 +115,7 @@ export function Settings() {
            </div>
 
            <div className="pt-6 border-t border-slate-800">
-             <h3 className="text-lg font-semibold text-slate-900 mb-4">Notification Settings</h3>
+             <h3 className="text-lg font-semibold text-white mb-4">Notification Settings</h3>
              <div className="space-y-3">
                <label className="flex items-center gap-3">
                  <input 
@@ -124,7 +124,7 @@ export function Settings() {
                    onChange={(e) => handleSettingChange(setEmailAlerts, e.target.checked)}
                    className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-600 focus:ring-offset-slate-900" 
                  />
-                 <span className="text-slate-700">Email Alerts for Overloading</span>
+                 <span className="text-slate-300">Email Alerts for Overloading</span>
                </label>
                <label className="flex items-center gap-3">
                  <input 
@@ -133,7 +133,7 @@ export function Settings() {
                    onChange={(e) => handleSettingChange(setSoundAlerts, e.target.checked)}
                    className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-600 focus:ring-offset-slate-900" 
                  />
-                 <span className="text-slate-700">Real-time Dashboard Sound</span>
+                 <span className="text-slate-300">Real-time Dashboard Sound</span>
                </label>
              </div>
            </div>
