@@ -154,7 +154,7 @@ export function Dashboard() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Dashboard Overview</h2>
+          <h2 className="text-2xl font-bold text-slate-900">Dashboard Overview</h2>
           <p className="text-slate-400">Real-time monitoring and violation reporting</p>
         </div>
         <div className="flex gap-2 items-center">
@@ -189,7 +189,7 @@ export function Dashboard() {
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-              <h3 className="font-semibold text-white flex items-center gap-2">
+              <h3 className="font-semibold text-slate-900 flex items-center gap-2">
                 {activeTab === 'live' ? (
                   <>
                     <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -233,7 +233,7 @@ export function Dashboard() {
         {/* Sidebar */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 flex flex-col h-[500px]">
           <div className="p-4 border-b border-slate-800">
-            <h3 className="font-semibold text-white flex items-center gap-2">
+            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
               <Clock className="w-4 h-4 text-slate-400" /> Recent Detections
             </h3>
           </div>
@@ -245,7 +245,7 @@ export function Dashboard() {
                     {v.detections[0]?.type === 'no_helmet' && <HardHat className="w-4 h-4 text-orange-500" />}
                     {v.detections[0]?.type === 'no_plate' && <FileWarning className="w-4 h-4 text-yellow-500" />}
                     {v.detections[0]?.type === 'overloading' && <Scale className="w-4 h-4 text-red-500" />}
-                    <span className="font-medium text-slate-200">
+                    <span className="font-medium text-slate-900">
                       {v.detections[0]?.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Unknown'}
                     </span>
                   </div>
@@ -253,7 +253,7 @@ export function Dashboard() {
                 </div>
                 <div className="flex justify-between items-center text-xs text-slate-400 mt-2">
                   <span>{v.location}</span>
-                  <span className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">{Math.round((v.detections[0]?.confidence || 0) * 100)}% Conf.</span>
+                  <span className="bg-slate-700 px-1.5 py-0.5 rounded text-white">{Math.round((v.detections[0]?.confidence || 0) * 100)}% Conf.</span>
                 </div>
               </div>
             ))}
@@ -275,7 +275,7 @@ function StatsCard({ title, value, trend, trendUp, subtitle, icon: Icon, color, 
       <div className="flex justify-between items-start">
         <div>
           <p className="text-sm text-slate-400 mb-1">{title}</p>
-          <h3 className="text-3xl font-bold text-white">{value}</h3>
+          <h3 className="text-3xl font-bold text-slate-900">{value}</h3>
           {trend && <div className={cn("flex items-center text-sm mt-1", trendUp ? "text-green-500" : "text-red-500")}>
             <span>{trend}</span><span className="text-slate-500 ml-1">vs yesterday</span>
           </div>}

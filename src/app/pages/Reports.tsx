@@ -210,23 +210,23 @@ export function Reports() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-white">Reports & Export</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Reports & Export</h2>
         <p className="text-slate-400">Generate compliance reports and data exports</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Configuration Panel */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 space-y-6">
-           <h3 className="font-semibold text-white flex items-center gap-2">
+           <h3 className="font-semibold text-slate-900 flex items-center gap-2">
              <Filter className="w-5 h-5 text-blue-500" />
              Report Configuration
            </h3>
            
            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Date Range</label>
                 <select 
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={dateRange}
                   onChange={(e) => setDateRange(e.target.value)}
                 >
@@ -242,13 +242,13 @@ export function Reports() {
 
               {dateRange === 'Custom Range' && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Custom Date Range</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Custom Date Range</label>
                   <div className="grid grid-cols-2 gap-4">
                      <div className="relative">
                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                        <input 
                          type="date" 
-                         className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                         className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500" 
                          value={customStartDate} 
                          onChange={(e) => setCustomStartDate(e.target.value)} 
                          placeholder="Start Date"
@@ -258,7 +258,7 @@ export function Reports() {
                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                        <input 
                          type="date" 
-                         className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                         className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500" 
                          value={customEndDate} 
                          onChange={(e) => setCustomEndDate(e.target.value)} 
                          placeholder="End Date"
@@ -269,8 +269,8 @@ export function Reports() {
               )}
 
               <div>
-                 <label className="block text-sm font-medium text-slate-300 mb-2">Report Type</label>
-                 <select className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200" value={reportType} onChange={(e) => setReportType(e.target.value)}>
+                 <label className="block text-sm font-medium text-slate-700 mb-2">Report Type</label>
+                 <select className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-900" value={reportType} onChange={(e) => setReportType(e.target.value)}>
                     <option>Violation Summary (Daily)</option>
                     <option>Violation Summary (Monthly)</option>
                     <option>Metrics & Analytics Data</option>
@@ -280,19 +280,19 @@ export function Reports() {
               </div>
 
               <div>
-                 <label className="block text-sm font-medium text-slate-300 mb-2">Format</label>
+                 <label className="block text-sm font-medium text-slate-700 mb-2">Format</label>
                  <div className="flex gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="radio" name="format" className="text-blue-600 focus:ring-blue-500" value="pdf" checked={format === 'pdf'} onChange={(e) => setFormat(e.target.value)} />
-                      <span className="text-slate-300">PDF Document</span>
+                      <span className="text-slate-700">PDF Document</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="radio" name="format" className="text-blue-600 focus:ring-blue-500" value="xlsx" checked={format === 'xlsx'} onChange={(e) => setFormat(e.target.value)} />
-                      <span className="text-slate-300">Excel Spreadsheet (XLSX)</span>
+                      <span className="text-slate-700">Excel Spreadsheet (XLSX)</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="radio" name="format" className="text-blue-600 focus:ring-blue-500" value="csv" checked={format === 'csv'} onChange={(e) => setFormat(e.target.value)} />
-                      <span className="text-slate-300">CSV Raw Data</span>
+                      <span className="text-slate-700">CSV Raw Data</span>
                     </label>
                  </div>
               </div>
@@ -321,7 +321,7 @@ export function Reports() {
 
         {/* Recent Reports */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-           <h3 className="font-semibold text-white mb-4">Recent Generated Reports</h3>
+           <h3 className="font-semibold text-slate-900 mb-4">Recent Generated Reports</h3>
            <div className="space-y-3">
               {recentReports.map((report) => (
                 <div key={report.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors">
@@ -330,7 +330,7 @@ export function Reports() {
                         <FileText className="w-5 h-5 text-red-500" />
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-slate-200">{report.name}</div>
+                        <div className="text-sm font-medium text-slate-900">{report.name}</div>
                         <div className="text-xs text-slate-500">Generated by {report.user} • {report.size} • {report.date ? new Date(report.date).toLocaleString() : "Unknown date"}</div>
                       </div>
                    </div>
