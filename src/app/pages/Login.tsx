@@ -64,31 +64,31 @@ export function Login() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl"
+        className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-lg"
       >
         <div className="flex flex-col items-center mb-8">
           <motion.div 
             initial={{ scale: 0.8 }}
             animate={{ scale: 1 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="bg-blue-600 p-3 rounded-xl mb-4"
+            className="bg-blue-900 p-3 rounded-xl mb-4"
           >
             <ShieldAlert className="w-8 h-8 text-white" />
           </motion.div>
-          <h1 className="text-2xl font-bold text-center">SafeRide Portal</h1>
-          <p className="text-slate-400 text-center text-sm mt-1">REAL-TIME DETECTION SYSTEM</p>
+          <h1 className="text-2xl font-bold text-center text-slate-900">SafeRide</h1>
+          <p className="text-slate-500 text-center text-sm mt-1 uppercase tracking-wide">Authorized Access</p>
         </div>
 
         {/* User Type Selection */}
         <div className="mb-6">
-          <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-lg">
+          <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-lg border border-dashed border-slate-300">
             <button
               type="button"
               onClick={() => setUserType('admin')}
               className={`py-2 px-4 rounded-md font-medium text-sm transition-all duration-200 active:scale-95 ${
                 userType === 'admin'
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-blue-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               Admin Login
@@ -98,8 +98,8 @@ export function Login() {
               onClick={() => setUserType('user')}
               className={`py-2 px-4 rounded-md font-medium text-sm transition-all duration-200 active:scale-95 ${
                 userType === 'user'
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-blue-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               User Login
@@ -119,7 +119,7 @@ export function Login() {
           )}
           
           <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300">Username</label>
+            <label className="text-sm font-medium text-slate-700">Username</label>
             <div className="relative group">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 transition-colors group-focus-within:text-blue-400" />
               <input 
@@ -127,7 +127,7 @@ export function Login() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={isLoading}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 transition-all duration-200 hover:border-slate-600"
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 transition-all duration-200 hover:border-slate-600"
                 placeholder="Enter username"
                 required
               />
@@ -135,7 +135,7 @@ export function Login() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300">Password</label>
+            <label className="text-sm font-medium text-slate-700">Password</label>
             <div className="relative group">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 transition-colors group-focus-within:text-blue-400" />
               <input 
@@ -143,7 +143,7 @@ export function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 transition-all duration-200 hover:border-slate-600"
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 transition-all duration-200 hover:border-slate-600"
                 placeholder="Enter password"
                 required
               />
@@ -153,7 +153,7 @@ export function Login() {
           <button 
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] hover:shadow-lg hover:shadow-blue-600/20"
+            className="w-full bg-blue-900 hover:bg-blue-950 text-white font-medium py-2.5 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] border border-dashed border-blue-700"
           >
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>

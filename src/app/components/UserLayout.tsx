@@ -34,14 +34,14 @@ export function UserLayout() {
       <SessionExpiryWarning onExtendSession={extendSession} onLogout={handleLogout} />
       
       {/* Sidebar for Desktop */}
-      <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 fixed h-full z-10">
+      <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 fixed h-full z-10 shadow-sm">
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          <div className="bg-blue-600 p-2 rounded-lg">
+          <div className="bg-blue-900 p-2 rounded-lg">
             <ShieldAlert className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-lg leading-tight">SafeRide</h1>
-            <p className="text-xs text-slate-400">Citizen Portal</p>
+            <h1 className="font-bold text-lg leading-tight text-slate-900">SafeRide</h1>
+            <p className="text-xs text-slate-500">Citizen Portal</p>
           </div>
         </div>
 
@@ -53,15 +53,15 @@ export function UserLayout() {
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-lg group",
+                  "flex items-center gap-3 px-4 py-3 rounded-lg group border border-dashed",
                   transitions.default,
                   activeEffects.scale,
                   isActive 
-                    ? "bg-blue-600/10 text-blue-400 border border-blue-600/20 shadow-lg shadow-blue-600/10" 
+                    ? "bg-blue-950/5 text-blue-900 border-blue-300 shadow-md shadow-blue-600/10" 
                     : cx(
-                        "text-slate-400 border border-transparent",
+                        "text-slate-500 border-slate-300",
                         hoverEffects.buttonGhost,
-                        "hover:text-slate-200 hover:shadow-md"
+                        "hover:text-slate-800 hover:shadow-sm"
                       )
                 )}
               >
@@ -80,8 +80,8 @@ export function UserLayout() {
           <button 
             onClick={handleLogout}
             className={cx(
-              "flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 w-full",
-              "hover:bg-red-900/20 hover:text-red-400",
+              "flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 w-full border border-dashed border-slate-300",
+              "hover:bg-red-50 hover:text-red-600",
               transitions.colors,
               activeEffects.scale
             )}
@@ -96,8 +96,8 @@ export function UserLayout() {
       <div className="flex-1 flex flex-col min-w-0 md:ml-64">
         <header className="md:hidden flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800 sticky top-0 z-20">
           <div className="flex items-center gap-2">
-             <ShieldAlert className="w-6 h-6 text-blue-500" />
-             <span className="font-bold">SafeRide</span>
+             <ShieldAlert className="w-6 h-6 text-blue-900" />
+             <span className="font-bold text-slate-900">SafeRide</span>
           </div>
           <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
             {isMobileMenuOpen ? <X /> : <Menu />}
@@ -113,12 +113,12 @@ export function UserLayout() {
                   to={item.path}
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-lg",
+                    "flex items-center gap-3 px-4 py-3 rounded-lg border border-dashed border-slate-300",
                     transitions.colors,
                     activeEffects.scale,
                     location.pathname.startsWith(item.path)
-                      ? "bg-blue-600/10 text-blue-400" 
-                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                      ? "bg-blue-950/5 text-blue-900 border-blue-300" 
+                      : "text-slate-500 hover:bg-slate-800 hover:text-slate-900"
                   )}
                 >
                   <item.icon className="w-5 h-5" />
@@ -131,8 +131,8 @@ export function UserLayout() {
                   handleLogout();
                 }}
                 className={cx(
-                  "flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 w-full mt-4",
-                  "hover:bg-red-900/20 hover:text-red-400",
+                  "flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 w-full mt-4 border border-dashed border-slate-300",
+                  "hover:bg-red-50 hover:text-red-600",
                   transitions.colors,
                   activeEffects.scale
                 )}
